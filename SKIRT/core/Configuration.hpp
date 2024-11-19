@@ -369,6 +369,8 @@ public:
         otherwise. */
     bool hasRadiationField() const { return _hasRadiationField; }
 
+    bool usesReverseRayTracing() const {return _usesReverseRayTracing; }
+
     /** Returns true if a panchromatic radiation field (from which a temperature can be calculated)
         is being stored during the photon cycle, and false otherwise. */
     bool hasPanRadiationField() const { return _hasPanRadiationField; }
@@ -511,6 +513,7 @@ private:
 
     // radiation field
     bool _hasRadiationField{false};
+    bool _usesReverseRayTracing{false};
     bool _hasPanRadiationField{false};
     bool _hasSecondaryRadiationField{false};
     DisjointWavelengthGrid* _radiationFieldWLG{nullptr};

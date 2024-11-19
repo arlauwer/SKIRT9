@@ -95,8 +95,15 @@ void MonteCarloSimulation::runSimulation()
         probeSystem()->probeRun();
 
         // write instrument output
-        instrumentSystem()->flush();
-        instrumentSystem()->write();
+        if (_config->usesReverseRayTracing())
+        {
+            instrumentSystem()->rayTrace();
+        }
+        else
+        {
+            instrumentSystem()->flush();
+            instrumentSystem()->write();
+        }
     }
 }
 
@@ -109,6 +116,7 @@ void MonteCarloSimulation::runPrimaryEmission()
 
     // clear the radiation field
     if (_config->hasRadiationField()) mediumSystem()->clearRadiationField(true);
+    if (_config->usesReverseRayTracing()) mediumSystem()->clearProjectedRadiationField(true);
 
     // shoot photons from primary sources, if needed
     size_t Npp = _config->numPrimaryPackets();
@@ -646,6 +654,16 @@ void MonteCarloSimulation::storeRadiationField(const PhotonPacket* pp)
                     double extMean = SpecialFunctions::lnmean(extEnd, extBeg, lnExtEnd, lnExtBeg);
                     double Lds = luminosity * extMean * segment.ds();
                     mediumSystem()->storeRadiationField(hasPrimaryOrigin, m, ell, Lds);
+
+                    if (_config->usesReverseRayTracing())
+                    {
+                        for (Instrument* instrument : _instrumentSystem->instruments())
+                        {
+                            const Direction bfkobs = instrument->bfkobs(pp->position());
+                            double proj = Vec::dot(bfkobs, pp->direction()) * Lds;
+                            mediumSystem()->storeProjectedRadiationField(hasPrimaryOrigin, m, ell, proj);
+                        }
+                    }
                 }
                 lnExtBeg = lnExtEnd;
                 extBeg = extEnd;

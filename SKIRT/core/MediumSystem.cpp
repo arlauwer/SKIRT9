@@ -226,7 +226,13 @@ void MediumSystem::setupSelfAfter()
             _rf2.resize(_numCells, _wavelengthGrid->numBins());
             _rf2c.resize(_numCells, _wavelengthGrid->numBins());
             allocatedBytes += 2 * _rf2.size() * sizeof(double);
+
+            _prf2.resize(_numCells, _wavelengthGrid->numBins());
+            _prf2c.resize(_numCells, _wavelengthGrid->numBins());
+            allocatedBytes += 2 * _prf2.size() * sizeof(double);
         }
+        _prf1.resize(_numCells, _wavelengthGrid->numBins());
+        allocatedBytes += _prf1.size() * sizeof(double);
     }
 
     // ----- cache info on the dust emission wavelength grid -----
@@ -1311,6 +1317,43 @@ void MediumSystem::communicateRadiationField(bool primary)
     }
 }
 
+////////////////////////////////////////////////////////////////////
+
+void MediumSystem::clearProjectedRadiationField(bool primary)
+{
+    if (primary)
+    {
+        _prf1.setToZero();
+        if (_prf2.size()) _prf2.setToZero();
+    }
+    else
+    {
+        _prf2c.setToZero();
+    }
+}
+
+////////////////////////////////////////////////////////////////////
+
+void MediumSystem::storeProjectedRadiationField(bool primary, int m, int ell, double Lds)
+{
+    if (primary)
+        LockFree::add(_prf1(m, ell), Lds);
+    else
+        LockFree::add(_prf2c(m, ell), Lds);
+}
+
+////////////////////////////////////////////////////////////////////
+
+void MediumSystem::communicateProjectedRadiationField(bool primary)
+{
+    if (primary)
+        ProcessManager::sumToAll(_prf1.data());
+    else
+    {
+        ProcessManager::sumToAll(_prf2c.data());
+        _prf2 = _prf2c;
+    }
+}
 ////////////////////////////////////////////////////////////////////
 
 std::pair<double, double> MediumSystem::totalDustAbsorbedLuminosity() const

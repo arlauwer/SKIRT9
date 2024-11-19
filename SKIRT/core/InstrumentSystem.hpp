@@ -6,6 +6,7 @@
 #ifndef INSTRUMENTSYSTEM_HPP
 #define INSTRUMENTSYSTEM_HPP
 
+#include "RayInstrument.hpp"
 #include "Instrument.hpp"
 #include "WavelengthGrid.hpp"
 
@@ -29,6 +30,10 @@ class InstrumentSystem : public SimulationItem
         ATTRIBUTE_DEFAULT_VALUE(instruments, "SEDInstrument")
         ATTRIBUTE_REQUIRED_IF(instruments, "false")
 
+        PROPERTY_ITEM_LIST(rayInstruments, RayInstrument, "the ray tracing instruments")
+        // ATTRIBUTE_DEFAULT_VALUE(instruments, "SEDInstrument")
+        ATTRIBUTE_REQUIRED_IF(rayInstruments, "false")
+
     ITEM_END()
 
     //============= Construction - Setup - Destruction =============
@@ -46,9 +51,12 @@ public:
         complete instrument system. It calls the flush() function for each of the instruments. */
     void flush();
 
+    void rayTrace();
+
     /** This function writes the recorded data for the complete instrument system to a set of
         files. It calls the write() function for each of the instruments. */
     void write();
+
 };
 
 ////////////////////////////////////////////////////////////////////

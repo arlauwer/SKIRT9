@@ -31,6 +31,13 @@ void InstrumentSystem::flush()
 void InstrumentSystem::write()
 {
     for (Instrument* instrument : _instruments) instrument->write();
+
+    for (RayInstrument* instrument : _rayInstruments) instrument->write();
 }
 
 ////////////////////////////////////////////////////////////////////
+
+void InstrumentSystem::rayTrace()
+{
+    for (RayInstrument* instrument: _rayInstruments) instrument->rayTrace();
+}

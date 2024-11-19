@@ -637,6 +637,12 @@ public:
         synchronized and its contents is copied into the stable secondary table. */
     void communicateRadiationField(bool primary);
 
+    void clearProjectedRadiationField(bool primary);
+
+    void storeProjectedRadiationField(bool primary, int m, int ell, double Lds);
+
+    void communicateProjectedRadiationField(bool primary);
+
     /** This function returns a pair of values specifying the bolometric luminosity absorbed by
         dust media across the complete domain of the spatial grid, respectively using the partial
         radiation field stored in the primary table and the stable secondary table. The bolometric
@@ -864,6 +870,11 @@ private:
     Table<2> _rf1;   // radiation field from primary sources
     Table<2> _rf2;   // radiation field from secondary sources (copied from _rf2c at the appropriate time)
     Table<2> _rf2c;  // radiation field currently being accumulated from secondary sources
+
+    // need to figure out how to do this for every instrument
+    Table<2> _prf1;  // projected radiation field towards a single instrument
+    Table<2> _prf2;  // projected radiation field towards a single instrument
+    Table<2> _prf2c;  // projected radiation field towards a single instrument
 
     // relevant for any simulation mode that includes dust emission
     int _numDustEmissionWavelengths{0};

@@ -94,6 +94,7 @@
 #include "FlatUniverseCosmology.hpp"
 #include "FragmentDustMixDecorator.hpp"
 #include "FrameInstrument.hpp"
+#include "FrameRayInstrument.hpp"
 #include "FullInstrument.hpp"
 #include "GammaGeometry.hpp"
 #include "GaussianGeometry.hpp"
@@ -662,6 +663,8 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<AllSkyInstrument>();
     ItemRegistry::add<HEALPixSkyInstrument>();
     ItemRegistry::add<PerspectiveInstrument>();
+    ItemRegistry::add<RayInstrument>();
+    ItemRegistry::add<DistantRayInstrument>();
 
     // all-sky projections
     ItemRegistry::add<AllSkyProjection>();

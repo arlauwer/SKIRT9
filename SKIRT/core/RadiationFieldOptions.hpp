@@ -31,6 +31,10 @@ class RadiationFieldOptions : public SimulationItem
         ATTRIBUTE_DEFAULT_VALUE(radiationFieldWLG, "LogWavelengthGrid")
         ATTRIBUTE_RELEVANT_IF(radiationFieldWLG, "RadiationField&Panchromatic")
 
+        PROPERTY_BOOL(useReverseRayTracing, "use RRT")
+        ATTRIBUTE_DEFAULT_VALUE(useReverseRayTracing, "false")
+        ATTRIBUTE_RELEVANT_IF(useReverseRayTracing, "RadiationField")
+
     ITEM_END()
 };
 
