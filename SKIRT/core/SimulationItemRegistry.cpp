@@ -235,6 +235,7 @@
 #include "SpatialGrid.hpp"
 #include "SpatialGridPlotProbe.hpp"
 #include "SpatialGridSourceDensityProbe.hpp"
+#include "SpecificRadiationFieldProbe.hpp"
 #include "SpecificLuminosityNormalization.hpp"
 #include "SphePowerLawRedistributeGeometryDecorator.hpp"
 #include "Sphere1DSpatialGrid.hpp"
@@ -665,6 +666,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<PerspectiveInstrument>();
     ItemRegistry::add<RayInstrument>();
     ItemRegistry::add<DistantRayInstrument>();
+    ItemRegistry::add<FrameRayInstrument>();
 
     // all-sky projections
     ItemRegistry::add<AllSkyProjection>();
@@ -697,6 +699,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<MagneticFieldProbe>();
     ItemRegistry::add<CustomStateProbe>();
     ItemRegistry::add<RadiationFieldProbe>();
+    ItemRegistry::add<SpecificRadiationFieldProbe>();
     ItemRegistry::add<SecondaryDustLuminosityProbe>();
     ItemRegistry::add<SecondaryLineLuminosityProbe>();
     //   .. properties

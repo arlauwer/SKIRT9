@@ -9,6 +9,7 @@
 #include "DensityInCellInterface.hpp"
 #include "DisjointWavelengthGrid.hpp"
 #include "FatalError.hpp"
+#include "HEALPix.hpp"
 #include "LockFree.hpp"
 #include "Log.hpp"
 #include "LyaUtils.hpp"
@@ -221,18 +222,34 @@ void MediumSystem::setupSelfAfter()
         _rf1.resize(_numCells, _wavelengthGrid->numBins());
         allocatedBytes += _rf1.size() * sizeof(double);
 
+        if (_config->hasSpecificRadiationField())
+        {
+            // compute the side length of the subdivision within a single HEALPix base pixel
+            _Nside = 1 << _config->order();
+
+            // we map the 12 * _Nside^2 HEALPix pixels to an almost square image with 16 * _Nside * (_Nside-1) pixels
+            _Nx = 4 * _Nside;
+            _Ny = 4 * _Nside - 1;
+
+            _si1.resize(_numCells, _wavelengthGrid->numBins(), _Nx, _Ny);
+
+            allocatedBytes += _si1.size() * sizeof(double);
+        }
+
         if (_config->hasSecondaryRadiationField())
         {
             _rf2.resize(_numCells, _wavelengthGrid->numBins());
             _rf2c.resize(_numCells, _wavelengthGrid->numBins());
             allocatedBytes += 2 * _rf2.size() * sizeof(double);
 
-            _prf2.resize(_numCells, _wavelengthGrid->numBins());
-            _prf2c.resize(_numCells, _wavelengthGrid->numBins());
-            allocatedBytes += 2 * _prf2.size() * sizeof(double);
+            if (_config->hasSpecificRadiationField())
+            {
+                _si2.resize(_numCells, _wavelengthGrid->numBins(), _Nx, _Ny);
+                _si2c.resize(_numCells, _wavelengthGrid->numBins(), _Nx, _Ny);
+
+                allocatedBytes += 2 * _si2.size() * sizeof(double);
+            }
         }
-        _prf1.resize(_numCells, _wavelengthGrid->numBins());
-        allocatedBytes += _prf1.size() * sizeof(double);
     }
 
     // ----- cache info on the dust emission wavelength grid -----
@@ -1317,43 +1334,42 @@ void MediumSystem::communicateRadiationField(bool primary)
     }
 }
 
-////////////////////////////////////////////////////////////////////
-
-void MediumSystem::clearProjectedRadiationField(bool primary)
+void MediumSystem::clearSpecificRadiationField(bool primary)
 {
     if (primary)
     {
-        _prf1.setToZero();
-        if (_prf2.size()) _prf2.setToZero();
+        _si1.setToZero();
+        if (_si2.size()) _si2.setToZero();
     }
     else
     {
-        _prf2c.setToZero();
+        _si2c.setToZero();
     }
 }
 
 ////////////////////////////////////////////////////////////////////
 
-void MediumSystem::storeProjectedRadiationField(bool primary, int m, int ell, double Lds)
+void MediumSystem::storeSpecificRadiationField(bool primary, int m, int ell, int Hi, int Hj, double Lds)
 {
     if (primary)
-        LockFree::add(_prf1(m, ell), Lds);
+        LockFree::add(_si1(m, ell, Hi, Hj), Lds);
     else
-        LockFree::add(_prf2c(m, ell), Lds);
+        LockFree::add(_si2c(m, ell, Hi, Hj), Lds);
 }
 
 ////////////////////////////////////////////////////////////////////
 
-void MediumSystem::communicateProjectedRadiationField(bool primary)
+void MediumSystem::communicateSpecificRadiationField(bool primary)
 {
     if (primary)
-        ProcessManager::sumToAll(_prf1.data());
+        ProcessManager::sumToAll(_si1.data());
     else
     {
-        ProcessManager::sumToAll(_prf2c.data());
-        _prf2 = _prf2c;
+        ProcessManager::sumToAll(_si2c.data());
+        _si2 = _si2c;
     }
 }
+
 ////////////////////////////////////////////////////////////////////
 
 std::pair<double, double> MediumSystem::totalDustAbsorbedLuminosity() const
@@ -1409,6 +1425,16 @@ double MediumSystem::radiationField(int m, int ell) const
 
 ////////////////////////////////////////////////////////////////////
 
+double MediumSystem::specificRadiationField(int m, int ell, int Hi, int Hj) const
+{
+    double si = 0.;
+    if (_si1.size()) si += _si1(m, ell, Hi, Hj);
+    if (_si2.size()) si += _si2(m, ell, Hi, Hj);
+    return si;
+}
+
+////////////////////////////////////////////////////////////////////
+
 Array MediumSystem::meanIntensity(int m) const
 {
     int numWavelengths = _wavelengthGrid->numBins();
@@ -1417,6 +1443,22 @@ Array MediumSystem::meanIntensity(int m) const
     for (int ell = 0; ell < numWavelengths; ell++)
     {
         Jv[ell] = radiationField(m, ell) * factor / _wavelengthGrid->effectiveWidth(ell);
+    }
+    return Jv;
+}
+
+////////////////////////////////////////////////////////////////////
+
+Array MediumSystem::specificIntensity(int m, double theta, double phi) const
+{
+    int numWavelengths = _wavelengthGrid->numBins();
+    Array Jv(numWavelengths);
+    double factor = 3 * _Nside * _Nside / (M_PI * _state.volume(m));  // solid angle of healpixel
+    int Hi, Hj;
+    for (int ell = 0; ell < numWavelengths; ell++)
+    {
+        HEALPix::binHEALPix(theta, phi, Hi, Hj, _Nside);
+        Jv[ell] = specificRadiationField(m, ell, Hi, Hj) * factor / _wavelengthGrid->effectiveWidth(ell);
     }
     return Jv;
 }

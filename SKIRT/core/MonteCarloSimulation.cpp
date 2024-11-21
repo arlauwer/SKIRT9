@@ -5,6 +5,7 @@
 
 #include "MonteCarloSimulation.hpp"
 #include "FatalError.hpp"
+#include "HEALPix.hpp"
 #include "Log.hpp"
 #include "Parallel.hpp"
 #include "ParallelFactory.hpp"
@@ -95,15 +96,9 @@ void MonteCarloSimulation::runSimulation()
         probeSystem()->probeRun();
 
         // write instrument output
-        if (_config->usesReverseRayTracing())
-        {
-            instrumentSystem()->rayTrace();
-        }
-        else
-        {
-            instrumentSystem()->flush();
-            instrumentSystem()->write();
-        }
+        instrumentSystem()->rayTrace();
+        instrumentSystem()->flush();
+        instrumentSystem()->write();
     }
 }
 
@@ -116,7 +111,6 @@ void MonteCarloSimulation::runPrimaryEmission()
 
     // clear the radiation field
     if (_config->hasRadiationField()) mediumSystem()->clearRadiationField(true);
-    if (_config->usesReverseRayTracing()) mediumSystem()->clearProjectedRadiationField(true);
 
     // shoot photons from primary sources, if needed
     size_t Npp = _config->numPrimaryPackets();
@@ -638,6 +632,8 @@ void MonteCarloSimulation::storeRadiationField(const PhotonPacket* pp)
         int ell = _config->radiationFieldWLG()->bin(pp->wavelength());
         if (ell >= 0)
         {
+            int Nside = _mediumSystem->HEALPIX_Nside();
+
             double luminosity = pp->luminosity();
             bool hasPrimaryOrigin = pp->hasPrimaryOrigin();
 
@@ -653,17 +649,27 @@ void MonteCarloSimulation::storeRadiationField(const PhotonPacket* pp)
                     // use this flavor of the lnmean function to avoid recalculating the logarithm of the extinction
                     double extMean = SpecialFunctions::lnmean(extEnd, extBeg, lnExtEnd, lnExtBeg);
                     double Lds = luminosity * extMean * segment.ds();
+                    if (_config->hasSpecificRadiationField())
+                    {
+                        int Hi = 0, Hj = 0;
+                        double theta, phi;
+                        pp->direction().spherical(theta, phi);
+                        HEALPix::binHEALPix(theta, phi, Hi, Hj, Nside);
+                        mediumSystem()->storeSpecificRadiationField(hasPrimaryOrigin, m, ell, Hi, Hj, Lds);
+                    }
+
                     mediumSystem()->storeRadiationField(hasPrimaryOrigin, m, ell, Lds);
 
-                    if (_config->usesReverseRayTracing())
-                    {
-                        for (Instrument* instrument : _instrumentSystem->instruments())
-                        {
-                            const Direction bfkobs = instrument->bfkobs(pp->position());
-                            double proj = Vec::dot(bfkobs, pp->direction()) * Lds;
-                            mediumSystem()->storeProjectedRadiationField(hasPrimaryOrigin, m, ell, proj);
-                        }
-                    }
+                    // if (_config->usesReverseRayTracing())
+                    // {
+                    //     for (Instrument* instrument : _instrumentSystem->instruments())
+                    //     {
+
+                    //         const Direction bfkobs = instrument->bfkobs(pp->position());
+                    //         double proj = Vec::dot(bfkobs, pp->direction()) * Lds;
+                    //         if (proj > 0) mediumSystem()->storeProjectedRadiationField(hasPrimaryOrigin, m, ell, proj);
+                    //     }
+                    // }
                 }
                 lnExtBeg = lnExtEnd;
                 extBeg = extEnd;

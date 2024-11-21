@@ -400,6 +400,46 @@ void ProbeFormBridge::writeQuantity(string fileid, string quantity, string descr
                   valueAlongPath);
 }
 
+void ProbeFormBridge::writeQuantity(string fileid, string quantity, string description,
+                                    const vector<const Snapshot*>& snapshots, VectorListInEntity vectorListInEntity)
+{
+
+    // define the call-back function to retrieve an averaged value at a given position
+    auto valueAtPosition = [&snapshots, vectorListInEntity](Position bfr) {
+        thread_local EntityCollection entities;  // can be reused for all queries in a given execution thread
+        vector<Vec> vecList;
+        double sumw = 0.;
+        for (auto snapshot : snapshots)
+        {
+            snapshot->getEntities(entities, bfr);
+            entities.average([snapshot, vectorListInEntity](int m) {return vectorListInEntity(snapshot, m);});
+        }
+        return sumw > 0. ? sumvw / sumw : Vec();
+    };
+
+    // define the call-back function to retrieve an averaged value along a given path
+    auto valueAlongPath = [&snapshots, valueInEntity, weightInEntity](Position bfr, Direction bfk) {
+        thread_local EntityCollection entities;  // can be reused for all queries in a given execution thread
+        Vec sumvw;
+        double sumw = 0.;
+        for (auto snapshot : snapshots)
+        {
+            snapshot->getEntities(entities, bfr, bfk);
+            Vec svw;
+            double sw;
+            std::tie(svw, sw) =
+                entities.average([snapshot, valueInEntity](int m) { return valueInEntity(snapshot, m); },
+                                 [snapshot, weightInEntity](int m) { return weightInEntity(snapshot, m); });
+            sumvw += svw;
+            sumw += sw;
+        }
+        return sumw > 0. ? sumvw / sumw : Vec();
+    };
+
+    writeQuantity(fileid, fileid, quantity, quantity, description, projectedDescription, valueAtPosition,
+                  valueAlongPath);
+}
+
 ////////////////////////////////////////////////////////////////////
 
 const SimulationItem* ProbeFormBridge::probe() const

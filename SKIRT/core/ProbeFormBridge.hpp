@@ -232,6 +232,8 @@ public:
         entity with index \f$m\f$. */
     using WeightInEntity = std::function<double(const Snapshot* snapshot, int m)>;
 
+    using VectorListInEntity = std::function<vector<Vec>(const Snapshot* snapshot, int m)>;
+
     //======== Writing: for use by spatial grid probes  =======
 
     /** This function causes the form associated with this bridge to output a file for a scalar
@@ -328,6 +330,9 @@ public:
     void writeQuantity(string fileid, string quantity, string description, string projectedDescription,
                        const vector<const Snapshot*>& snapshots, VectorValueInEntity valueInEntity,
                        WeightInEntity weightInEntity);
+
+    void writeQuantity(string fileid, string quantity, string description, const vector<const Snapshot*>& snapshots,
+                       VectorListInEntity vectorListInEntity);
 
     //======== Querying: for use by all form types  =======
 

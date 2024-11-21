@@ -4,12 +4,15 @@
 ///////////////////////////////////////////////////////////////// */
 
 #include "FrameRayInstrument.hpp"
+#include "FITSInOut.hpp"
 #include "FluxRecorder.hpp"
-#include "PhotonPacket.hpp"
-#include "Table.hpp"
 #include "Log.hpp"
-#include "ParallelFactory.hpp"
 #include "Parallel.hpp"
+#include "ParallelFactory.hpp"
+#include "PathSegmentGenerator.hpp"
+#include "PhotonPacket.hpp"
+#include "ProcessManager.hpp"
+#include "Table.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -72,6 +75,9 @@ void FrameRayInstrument::rayTrace()
     double ypmin = centerY() - 0.5 * fieldOfViewY();
     double ypsiz = fieldOfViewY() / numPixelsY();
 
+    // get the oversampling rate
+    int Nsampling = 1;
+
     // calculate sines and cosines for the transformation from observer to model coordinates
     double costheta = cos(inclination());
     double sintheta = sin(inclination());
@@ -96,38 +102,73 @@ void FrameRayInstrument::rayTrace()
 
     // calculate the results in parallel
     auto log = find<Log>();
+    auto ms = find<MediumSystem>();
+    auto grid = ms->grid();
     log->infoSetElapsed(Nyp);
     auto parallel = find<ParallelFactory>()->parallelDistributed();
-    parallel->call(Nyp, [&vvv, xpmin, xpsiz, ypmin, ypsiz, kx, ky, kz, zp, costheta, sintheta, cosphi, sinphi,
-                         cosomega, sinomega, Nxp, log](size_t firstIndex, size_t numIndices) {
-        double val;
-        string progress = "calculated projected pixels: ";
+    parallel->call(Nyp, [&vvv, &ms, &grid, xpmin, xpsiz, ypmin, ypsiz, kx, ky, kz, zp, costheta, sintheta, cosphi,
+                         sinphi, cosomega, sinomega, Nxp, log, Nsampling](size_t firstIndex, size_t numIndices) {
+        int Nsampling2 = Nsampling * Nsampling;
 
         // loop over pixels
         for (size_t j = firstIndex; j != firstIndex + numIndices; ++j)
         {
             for (int i = 0; i != Nxp; ++i)
             {
-                // transform pixel indices to observer coordinates
-                double xp = xpmin + (i + 0.5) * xpsiz;
-                double yp = ypmin + (j + 0.5) * ypsiz;
+                for (int is = 0; is < Nsampling; ++is)
+                {
+                    for (int js = 0; js < Nsampling; ++js)
+                    {
+                        // transform pixel indices to observer coordinates
+                        double xp = xpmin + (i + (is + 1.0) / (Nsampling + 1.0)) * xpsiz;
+                        double yp = ypmin + (j + (js + 1.0) / (Nsampling + 1.0)) * ypsiz;
 
-                // transform observer coordinates to model coordinates (inverse transform of frame instrument)
-                double xpp = sinomega * xp - cosomega * yp;
-                double ypp = cosomega * xp + sinomega * yp;
-                double zpp = zp;
-                double x = cosphi * costheta * xpp - sinphi * ypp + cosphi * sintheta * zpp;
-                double y = sinphi * costheta * xpp + cosphi * ypp + sinphi * sintheta * zpp;
-                double z = -sintheta * xpp + costheta * zpp;
+                        // transform observer coordinates to model coordinates (inverse transform of frame instrument)
+                        double xpp = sinomega * xp - cosomega * yp;
+                        double ypp = cosomega * xp + sinomega * yp;
+                        double zpp = zp;
+                        double x = cosphi * costheta * xpp - sinphi * ypp + cosphi * sintheta * zpp;
+                        double y = sinphi * costheta * xpp + cosphi * ypp + sinphi * sintheta * zpp;
+                        double z = -sintheta * xpp + costheta * zpp;
 
-                // get the quantity value aggregated along a path leaving the pixel through the model
-                // bridge->valuesAlongPath(Position(x, y, z), kz, values);
+                        // get the quantity value aggregated along a path leaving the pixel through the model
+                        // bridge->valuesAlongPath(Position(x, y, z), kz, values);
 
+                        double val = 0;
+                        // get a segment generator and initialize the path
 
+                        auto generator = grid->createPathSegmentGenerator();
+                        SpatialGridPath path(Position(x, y, z), kz);
+                        generator->start(&path);
+
+                        // accumulate values along the path
+                        while (generator->next())
+                        {
+                            int m = generator->m();
+                            if (m < 0) continue;
+
+                            double theta, phi;  // get theta and phi
+                            kz.spherical(theta, phi);
+                            theta += M_PI;
+                            phi += M_PI;
+                            double I = ms->specificIntensity(m, theta, phi)[0];  // multiply by ds?
+                            vvv(j, i) += I / Nsampling2;
+                        }
+                    }
+                }
             }
-            log->infoIfElapsed(progress, 1);
         }
     });
+    ProcessManager::sumToRoot(vvv.data(), true);
+
+    // // write the file
+    // auto units = bridge->units();
+    // FITSInOut::write(bridge->probe(), "parallel-projected " + bridge->projectedDescription(), bridge->projectedPrefix(),
+    //                  vvv.data(), bridge->projectedUnit(), Nxp, Nyp, units->olength(xpsiz), units->olength(ypsiz),
+    //                  units->olength(xcent), units->olength(ycent), units->ulength(), bridge->axis(),
+    //                  bridge->axisUnit());
+
+    FITSInOut::write(this, "specificIntensity", "specificIntensity", vvv.data(), "test unit", Nxp, Nyp, 1, 1, centerY(), centerX(), "pixel");
 }
 
 ////////////////////////////////////////////////////////////////////

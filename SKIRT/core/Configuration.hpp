@@ -369,7 +369,11 @@ public:
         otherwise. */
     bool hasRadiationField() const { return _hasRadiationField; }
 
-    bool usesReverseRayTracing() const {return _usesReverseRayTracing; }
+    bool hasSpecificRadiationField() const { return _hasSpecificRadiationField; }
+
+    int order() const { return _order; }
+
+    bool usesReverseRayTracing() const { return _usesReverseRayTracing; }
 
     /** Returns true if a panchromatic radiation field (from which a temperature can be calculated)
         is being stored during the photon cycle, and false otherwise. */
@@ -513,6 +517,8 @@ private:
 
     // radiation field
     bool _hasRadiationField{false};
+    bool _hasSpecificRadiationField{false};
+    int _order{0};
     bool _usesReverseRayTracing{false};
     bool _hasPanRadiationField{false};
     bool _hasSecondaryRadiationField{false};

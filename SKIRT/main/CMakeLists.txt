@@ -7,8 +7,15 @@
 # Builds the SKIRT executable
 # ------------------------------------------------------------------
 
+# If MY_BUILD_SUFFIX isn't already defined, set it to a default value
+if(NOT DEFINED MY_BUILD_SUFFIX)
+    set(MY_BUILD_SUFFIX "")
+endif()
+
+message(STATUS "MY_BUILD_SUFFIX is set to: ${MY_BUILD_SUFFIX}")
+
 # set the target name
-set(TARGET skirt)
+set(TARGET "skirt${MY_BUILD_SUFFIX}")
 
 # list the source files in this directory
 file(GLOB SOURCES "*.cpp")

@@ -7,6 +7,8 @@
 #include "Configuration.hpp"
 #include "FatalError.hpp"
 #include "FluxRecorder.hpp"
+#include "SpatialGridPath.hpp"
+#include "PathSegmentGenerator.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -21,6 +23,8 @@ void RayInstrument::setupSelfBefore()
     // discover details about the simulation
     bool hasMedium = config->hasMedium();
     bool hasMediumEmission = config->hasSecondaryEmission();
+    _ms = find<MediumSystem>();
+    _grid = _ms->grid();
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -32,9 +36,6 @@ std::string RayInstrument::itemName() const
 
 ////////////////////////////////////////////////////////////////////
 
-void RayInstrument::write()
-{
-    
-}
+void RayInstrument::write() {}
 
 ////////////////////////////////////////////////////////////////////

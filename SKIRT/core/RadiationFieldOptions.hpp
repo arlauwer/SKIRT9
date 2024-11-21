@@ -27,13 +27,25 @@ class RadiationFieldOptions : public SimulationItem
         ATTRIBUTE_INSERT(storeRadiationField,
                          "!Emission&!IteratePrimary&ForceScattering&storeRadiationField:RadiationField")
 
+        PROPERTY_BOOL(storeSpecificRadiationField,
+                      "store the direction dependent radiation field to use in reverse ray-tracing")
+        ATTRIBUTE_DEFAULT_VALUE(storeSpecificRadiationField, "false")
+        ATTRIBUTE_RELEVANT_IF(storeSpecificRadiationField, "storeRadiationField")
+        ATTRIBUTE_DISPLAYED_IF(storeSpecificRadiationField, "Level3")
+
+        PROPERTY_INT(order, "HEALPix order")
+        ATTRIBUTE_MIN_VALUE(order, "0")
+        ATTRIBUTE_MAX_VALUE(order, "15")
+        ATTRIBUTE_DEFAULT_VALUE(order, "6")
+        ATTRIBUTE_RELEVANT_IF(order, "storeSpecificRadiationField")
+
         PROPERTY_ITEM(radiationFieldWLG, DisjointWavelengthGrid, "the wavelength grid for storing the radiation field")
         ATTRIBUTE_DEFAULT_VALUE(radiationFieldWLG, "LogWavelengthGrid")
         ATTRIBUTE_RELEVANT_IF(radiationFieldWLG, "RadiationField&Panchromatic")
 
         PROPERTY_BOOL(useReverseRayTracing, "use RRT")
         ATTRIBUTE_DEFAULT_VALUE(useReverseRayTracing, "false")
-        ATTRIBUTE_RELEVANT_IF(useReverseRayTracing, "RadiationField")
+        ATTRIBUTE_RELEVANT_IF(useReverseRayTracing, "storeSpecificRadiationField")
 
     ITEM_END()
 };

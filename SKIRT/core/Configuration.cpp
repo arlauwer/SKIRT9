@@ -245,7 +245,9 @@ void Configuration::setupSelfBefore()
                                              : ms->radiationFieldOptions()->radiationFieldWLG();
     }
     _hasSecondaryRadiationField = _hasSecondaryIterations || _storeEmissionRadiationField;
-
+    _hasSpecificRadiationField = ms->radiationFieldOptions()->storeSpecificRadiationField();
+    if (_hasSpecificRadiationField)
+        _order = ms->radiationFieldOptions()->order();
     _usesReverseRayTracing = ms->radiationFieldOptions()->useReverseRayTracing();
 
     // retrieve dust emission options

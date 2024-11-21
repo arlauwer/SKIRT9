@@ -12,7 +12,8 @@
 
 void DistantRayInstrument::setupSelfBefore()
 {
-
+    RayInstrument::setupSelfBefore();
+    
     // configure the flux recorder with the appropriate frame and distances
     if (distance() > 0.)
     {

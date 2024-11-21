@@ -19,7 +19,7 @@
 class FrameRayInstrument : public DistantRayInstrument
 {
     ITEM_CONCRETE(FrameRayInstrument, DistantRayInstrument,
-                  "a distant instrument that outputs the surface brightness in every pixel as a data cube")
+                  "a distant ray tracing instrument that outputs the surface brightness in every pixel as a data cube")
 
         PROPERTY_DOUBLE(fieldOfViewX, "the total field of view in the horizontal direction")
         ATTRIBUTE_QUANTITY(fieldOfViewX, "length")

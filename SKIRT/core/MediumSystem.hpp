@@ -637,11 +637,11 @@ public:
         synchronized and its contents is copied into the stable secondary table. */
     void communicateRadiationField(bool primary);
 
-    void clearProjectedRadiationField(bool primary);
+    void clearSpecificRadiationField(bool primary);
 
-    void storeProjectedRadiationField(bool primary, int m, int ell, double Lds);
+    void storeSpecificRadiationField(bool primary, int m, int ell, int Hi, int Hj, double Lds);
 
-    void communicateProjectedRadiationField(bool primary);
+    void communicateSpecificRadiationField(bool primary);
 
     /** This function returns a pair of values specifying the bolometric luminosity absorbed by
         dust media across the complete domain of the spatial grid, respectively using the partial
@@ -655,6 +655,8 @@ private:
         radiation field tables at the specified cell and wavelength indices. If a table is not
         present, the value for that table is assumed to be zero. */
     double radiationField(int m, int ell) const;
+
+    double specificRadiationField(int m, int ell, int Hi, int Hj) const;
 
 public:
     /** This function returns an array with the mean radiation field intensity
@@ -670,6 +672,10 @@ public:
         intensity \f$J_\lambda\f$ is expressed as an amount of energy per unit of time, per unit of
         area, per unit of wavelength, and per unit of solid angle. */
     Array meanIntensity(int m) const;
+
+    Array specificIntensity(int m, double theta, double phi) const;
+
+    int HEALPIX_Nside() { return _Nside; }
 
     //=============== Indicative temperature ===================
 
@@ -871,10 +877,17 @@ private:
     Table<2> _rf2;   // radiation field from secondary sources (copied from _rf2c at the appropriate time)
     Table<2> _rf2c;  // radiation field currently being accumulated from secondary sources
 
+    Table<4> _si1;   // specific intensity (cell, wavelength, healpix1, healpix2)
+    Table<4> _si2;   // specific intensity (cell, wavelength, healpix1, healpix2)
+    Table<4> _si2c;  // specific intensity (cell, wavelength, healpix1, healpix2)
+
+    // healpix
+    int _Nside, _Nx, _Ny;
+
     // need to figure out how to do this for every instrument
-    Table<2> _prf1;  // projected radiation field towards a single instrument
-    Table<2> _prf2;  // projected radiation field towards a single instrument
-    Table<2> _prf2c;  // projected radiation field towards a single instrument
+    // Table<2> _prf1;   // projected radiation field towards a single instrument
+    // Table<2> _prf2;   // projected radiation field towards a single instrument
+    // Table<2> _prf2c;  // projected radiation field towards a single instrument
 
     // relevant for any simulation mode that includes dust emission
     int _numDustEmissionWavelengths{0};
