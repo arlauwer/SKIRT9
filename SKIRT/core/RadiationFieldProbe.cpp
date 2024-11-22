@@ -55,10 +55,25 @@ void RadiationFieldProbe::probe()
 
         if (config->storeRadiationFieldDirection())
         {
+            auto config = find<Configuration>();
+            auto wavelengthGrid = config->radiationFieldWLG();
+            std::ofstream outFile("specific_intensity_output.txt");
+            for (int m = 0; m < ms->numCells(); m++)
+            {
+                auto grid = ms->grid();
+                Position p = grid->centralPositionInCell(m);
+                outFile << p.x() << "," << p.y() << "," << p.z() << std::endl;
+                for (int Hi = 0; Hi < ms->radiationFieldDirectionBin().Nbins(); Hi++)
+                {
+                    double si = ms->specificIntensity(m, Hi)[0];
+                    outFile << si << ", ";
+                }
+                outFile << std::endl;
+            }
+            outFile.close();
         }
         else
         {
-
             // define the call-back function to add column definitions
             auto addColumnDefinitions = [wlg, units](TextOutFile& outfile) {
                 for (int ell : Indices(wlg->numBins(), units->rwavelength()))

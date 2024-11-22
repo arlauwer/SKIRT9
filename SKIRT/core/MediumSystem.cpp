@@ -1400,12 +1400,17 @@ Array MediumSystem::meanIntensity(int m) const
 
 Array MediumSystem::specificIntensity(int m, double theta, double phi) const
 {
+    int Hi = _rf_dirbin.binHEALPix(theta, phi);
+    return specificIntensity(m, Hi);
+}
+
+Array MediumSystem::specificIntensity(int m, int Hi) const
+{
     int numWavelengths = _wavelengthGrid->numBins();
     Array Jv(numWavelengths);
     double factor = _rf_dirbin.Nbins() / (4 * M_PI * _state.volume(m));  // solid angle of healpixel
     for (int ell = 0; ell < numWavelengths; ell++)
     {
-        int Hi = _rf_dirbin.binHEALPix(theta, phi);
         Jv[ell] = radiationField(m, ell, Hi) * factor / _wavelengthGrid->effectiveWidth(ell);
     }
     return Jv;

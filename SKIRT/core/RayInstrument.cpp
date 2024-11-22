@@ -7,8 +7,8 @@
 #include "Configuration.hpp"
 #include "FatalError.hpp"
 #include "FluxRecorder.hpp"
-#include "SpatialGridPath.hpp"
 #include "PathSegmentGenerator.hpp"
+#include "SpatialGridPath.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -25,9 +25,29 @@ void RayInstrument::setupSelfBefore()
     bool hasMediumEmission = config->hasSecondaryEmission();
     _ms = find<MediumSystem>();
     _grid = _ms->grid();
+
+    _recorder = new RayRecorder(this);
+    _recorder->setSimulationInfo(instrumentName(), instrumentWavelengthGrid(), hasMedium, hasMediumEmission);
+    _recorder->setUserFlags(_recordComponents, _numScatteringLevels, _recordPolarization, _recordStatistics);
+}
+
+RayInstrument::~RayInstrument()
+{
+    delete _recorder;
 }
 
 ////////////////////////////////////////////////////////////////////
+
+void RayInstrument::setupSelfAfter()
+{
+    SimulationItem::setupSelfAfter();
+
+    // finalize configuration of the flux recorder
+    _recorder->finalizeConfiguration();
+}
+
+////////////////////////////////////////////////////////////////////
+
 
 std::string RayInstrument::itemName() const
 {
@@ -36,6 +56,9 @@ std::string RayInstrument::itemName() const
 
 ////////////////////////////////////////////////////////////////////
 
-void RayInstrument::write() {}
+void RayInstrument::write()
+{
+    _recorder->calibrateAndWrite();
+}
 
 ////////////////////////////////////////////////////////////////////

@@ -13,18 +13,22 @@
 void DistantRayInstrument::setupSelfBefore()
 {
     RayInstrument::setupSelfBefore();
-    
+
+    // pass the observer angles to the flux recorder
+    instrumentRayRecorder()->setObserverAngles(_inclination, _azimuth, _roll);
+
     // configure the flux recorder with the appropriate frame and distances
     if (distance() > 0.)
     {
-        // instrumentFluxRecorder()->setRestFrameDistance(distance());
+        instrumentRayRecorder()->setRestFrameDistance(distance());
     }
     else
     {
         auto config = find<Configuration>();
         if (config->redshift() > 0.)
         {
-            // instrumentFluxRecorder()->setObserverFrameRedshift(config->redshift(), config->angularDiameterDistance(), config->luminosityDistance());
+            instrumentRayRecorder()->setObserverFrameRedshift(config->redshift(), config->angularDiameterDistance(),
+                                                              config->luminosityDistance());
         }
         else
         {

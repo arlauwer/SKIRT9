@@ -11,6 +11,7 @@
 #include "SimulationItem.hpp"
 #include "WavelengthGrid.hpp"
 #include "MediumSystem.hpp"
+#include "RayRecorder.hpp"
 class FluxRecorder;
 class PhotonPacket;
 
@@ -72,6 +73,10 @@ protected:
         includeSurfaceBrightness() functions. */
     void setupSelfBefore() override;
 
+    void setupSelfAfter() override;
+
+    ~RayInstrument();
+
     //======================== Other Functions =======================
 
 public:
@@ -105,8 +110,9 @@ protected:
         the determineSameObserverAsPreceding() function implementation in subclasses. */
     void setSameObserverAsPreceding() { _isSameObserverAsPreceding = true; }
 
+    RayRecorder* instrumentRayRecorder() { return _recorder; }
+
 private:
-    void trace(Position bfr, Direction bfk);
 
     //=========== Functions to be implemented in subclass ===========
 
@@ -134,6 +140,7 @@ private:
     bool _isSameObserverAsPreceding{false};
     MediumSystem* _ms;
     SpatialGrid* _grid;
+    RayRecorder* _recorder;
 };
 
 ////////////////////////////////////////////////////////////////////

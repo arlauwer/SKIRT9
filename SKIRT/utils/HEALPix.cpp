@@ -9,7 +9,7 @@ template<typename I> inline I imodulo(I v1, I v2)
 HEALPix::HEALPix() {}
 
 HEALPix::HEALPix(int order)
-    : _order(order), _Nside(1 << _order), _Nbins(12 * _Nside << _order), _Ncap((_Nside << _order - _Nside) << 1)
+    : _order(order), _Nside(1 << _order), _Nbins(12 * _Nside << _order), _Ncap(2 * _Nside * (_Nside - 1))
 {}
 
 int HEALPix::binHEALPix(double theta, double phi) const
@@ -35,7 +35,7 @@ int HEALPix::binHEALPix(double theta, double phi) const
     {
         double temp1 = _Nside * (0.5 + tt);
         double temp2 = _Nside * z * 0.75;
-        int jp = int(temp1 - temp2);  // index of  ascending edge line
+        int jp = int(temp1 - temp2);  // index of ascending edge line
         int jm = int(temp1 + temp2);  // index of descending edge line
 
         // ring number counted from z=2/3

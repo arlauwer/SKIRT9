@@ -670,6 +670,8 @@ public:
 
     Array specificIntensity(int m, double theta, double phi) const;
 
+    Array specificIntensity(int m, int Hi) const;
+
     HEALPix radiationFieldDirectionBin() { return _rf_dirbin; }
 
     //=============== Indicative temperature ===================

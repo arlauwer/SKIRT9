@@ -16,6 +16,8 @@
 #include "SpecialFunctions.hpp"
 #include "StringUtils.hpp"
 #include "TimeLogger.hpp"
+#include <fstream>
+#include <iostream>
 
 ////////////////////////////////////////////////////////////////////
 
@@ -551,6 +553,9 @@ void MonteCarloSimulation::performLifeCycle(size_t firstIndex, size_t numIndices
                     {
                         double Lthreshold = pp.luminosity() / _config->minWeightReduction();
                         int minScattEvents = _config->minScattEvents();
+
+                        // std::ofstream phot("photon.txt", std::ios::app);
+                        // phot << pp.position().x() << "," << pp.position().y() << "," << pp.position().z() << std::endl;
                         while (true)
                         {
                             // calculate segments and optical depths for the complete path
@@ -559,9 +564,10 @@ void MonteCarloSimulation::performLifeCycle(size_t firstIndex, size_t numIndices
                             else
                                 mediumSystem()->setExtinctionOpticalDepths(&pp);
 
-                            // advance the packet
                             if (store) storeRadiationField(&pp);
                             simulateForcedPropagation(&pp);
+                            // phot << pp.position().x() << "," << pp.position().y() << "," << pp.position().z()
+                            //      << std::endl;
 
                             // if the packet's weight drops below the threshold, terminate it
                             if (pp.luminosity() <= 0
@@ -570,8 +576,10 @@ void MonteCarloSimulation::performLifeCycle(size_t firstIndex, size_t numIndices
 
                             // process the scattering event
                             if (peel) peelOffScattering(&pp, &ppp);
-                            mediumSystem()->simulateScattering(random(), &pp);
+                            mediumSystem()->simulateScattering(random(), &pp);  // temp removed
                         }
+                        // phot << "end" << std::endl;
+                        // phot.close();
                     }
                     // --- non-forced scattering ---
                     else
@@ -654,6 +662,7 @@ void MonteCarloSimulation::storeRadiationField(const PhotonPacket* pp)
                         double theta, phi;
                         pp->direction().spherical(theta, phi);
                         Hi = _mediumSystem->radiationFieldDirectionBin().binHEALPix(theta, phi);
+                        // std::cout << Hi << "," << theta << "," << phi + M_PI << "," << std::endl;
                     }
                     mediumSystem()->storeRadiationField(hasPrimaryOrigin, m, ell, Lds, Hi);
                 }
