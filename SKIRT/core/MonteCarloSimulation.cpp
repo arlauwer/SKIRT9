@@ -632,8 +632,6 @@ void MonteCarloSimulation::storeRadiationField(const PhotonPacket* pp)
         int ell = _config->radiationFieldWLG()->bin(pp->wavelength());
         if (ell >= 0)
         {
-            int Nside = _mediumSystem->HEALPIX_Nside();
-
             double luminosity = pp->luminosity();
             bool hasPrimaryOrigin = pp->hasPrimaryOrigin();
 
@@ -649,27 +647,15 @@ void MonteCarloSimulation::storeRadiationField(const PhotonPacket* pp)
                     // use this flavor of the lnmean function to avoid recalculating the logarithm of the extinction
                     double extMean = SpecialFunctions::lnmean(extEnd, extBeg, lnExtEnd, lnExtBeg);
                     double Lds = luminosity * extMean * segment.ds();
-                    if (_config->hasSpecificRadiationField())
+
+                    int Hi = 0;
+                    if (_config->storeRadiationFieldDirection())
                     {
-                        int Hi = 0, Hj = 0;
                         double theta, phi;
                         pp->direction().spherical(theta, phi);
-                        HEALPix::binHEALPix(theta, phi, Hi, Hj, Nside);
-                        mediumSystem()->storeSpecificRadiationField(hasPrimaryOrigin, m, ell, Hi, Hj, Lds);
+                        Hi = _mediumSystem->radiationFieldDirectionBin().binHEALPix(theta, phi);
                     }
-
-                    mediumSystem()->storeRadiationField(hasPrimaryOrigin, m, ell, Lds);
-
-                    // if (_config->usesReverseRayTracing())
-                    // {
-                    //     for (Instrument* instrument : _instrumentSystem->instruments())
-                    //     {
-
-                    //         const Direction bfkobs = instrument->bfkobs(pp->position());
-                    //         double proj = Vec::dot(bfkobs, pp->direction()) * Lds;
-                    //         if (proj > 0) mediumSystem()->storeProjectedRadiationField(hasPrimaryOrigin, m, ell, proj);
-                    //     }
-                    // }
+                    mediumSystem()->storeRadiationField(hasPrimaryOrigin, m, ell, Lds, Hi);
                 }
                 lnExtBeg = lnExtEnd;
                 extBeg = extEnd;
@@ -695,7 +681,7 @@ void MonteCarloSimulation::storeRadiationField(const PhotonPacket* pp)
                     // use this flavor of the lnmean function to avoid recalculating the logarithm of the extinction
                     double extMean = SpecialFunctions::lnmean(extEnd, extBeg, lnExtEnd, lnExtBeg);
                     double Lds = pp->perceivedLuminosity(lambda) * extMean * segment.ds();
-                    mediumSystem()->storeRadiationField(pp->hasPrimaryOrigin(), m, ell, Lds);
+                    mediumSystem()->storeRadiationField(pp->hasPrimaryOrigin(), m, ell, Lds, 0);  // fix this for HEALPix
                 }
             }
             lnExtBeg = lnExtEnd;

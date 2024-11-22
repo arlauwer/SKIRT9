@@ -9,6 +9,7 @@
 #include "Array.hpp"
 #include "DustEmissionOptions.hpp"
 #include "DynamicStateOptions.hpp"
+#include "HEALPix.hpp"
 #include "IterationOptions.hpp"
 #include "LyaOptions.hpp"
 #include "MaterialMix.hpp"
@@ -627,7 +628,7 @@ public:
         The addition happens in a thread-safe way, so that this function can be called from
         multiple parallel threads, even for the same spatial/wavelength bin. If any of the indices
         are out of range, undefined behavior results. */
-    void storeRadiationField(bool primary, int m, int ell, double Lds);
+    void storeRadiationField(bool primary, int m, int ell, double Lds, int Hi);
 
     /** This function accumulates the radiation field between multiple processes. In simulation
         modes that record the radiation field, the function should be called in serial code after
@@ -636,12 +637,6 @@ public:
         true, the primary table is synchronized; otherwise the temporary secondary table is
         synchronized and its contents is copied into the stable secondary table. */
     void communicateRadiationField(bool primary);
-
-    void clearSpecificRadiationField(bool primary);
-
-    void storeSpecificRadiationField(bool primary, int m, int ell, int Hi, int Hj, double Lds);
-
-    void communicateSpecificRadiationField(bool primary);
 
     /** This function returns a pair of values specifying the bolometric luminosity absorbed by
         dust media across the complete domain of the spatial grid, respectively using the partial
@@ -654,9 +649,9 @@ private:
     /** This function returns the sum of the values in both the primary and the stable secondary
         radiation field tables at the specified cell and wavelength indices. If a table is not
         present, the value for that table is assumed to be zero. */
-    double radiationField(int m, int ell) const;
+    double radiationField(int m, int ell, int Hi) const;
 
-    double specificRadiationField(int m, int ell, int Hi, int Hj) const;
+    double meanRadiationField(int m, int ell) const;
 
 public:
     /** This function returns an array with the mean radiation field intensity
@@ -675,7 +670,7 @@ public:
 
     Array specificIntensity(int m, double theta, double phi) const;
 
-    int HEALPIX_Nside() { return _Nside; }
+    HEALPix radiationFieldDirectionBin() { return _rf_dirbin; }
 
     //=============== Indicative temperature ===================
 
@@ -873,21 +868,12 @@ private:
     // - the sum of rf1 and rf2 represents the stable radiation field to be used as input for regular calculations
     // - rf2c serves as a target for storing the secondary radiation field so that rf1+rf2 remain available for
     //   calculating secondary emission spectra while already shooting photons through the grid
-    Table<2> _rf1;   // radiation field from primary sources
-    Table<2> _rf2;   // radiation field from secondary sources (copied from _rf2c at the appropriate time)
-    Table<2> _rf2c;  // radiation field currently being accumulated from secondary sources
-
-    Table<4> _si1;   // specific intensity (cell, wavelength, healpix1, healpix2)
-    Table<4> _si2;   // specific intensity (cell, wavelength, healpix1, healpix2)
-    Table<4> _si2c;  // specific intensity (cell, wavelength, healpix1, healpix2)
+    Table<3> _rf1;   // radiation field from primary sources
+    Table<3> _rf2;   // radiation field from secondary sources (copied from _rf2c at the appropriate time)
+    Table<3> _rf2c;  // radiation field currently being accumulated from secondary sources
 
     // healpix
-    int _Nside, _Nx, _Ny;
-
-    // need to figure out how to do this for every instrument
-    // Table<2> _prf1;   // projected radiation field towards a single instrument
-    // Table<2> _prf2;   // projected radiation field towards a single instrument
-    // Table<2> _prf2c;  // projected radiation field towards a single instrument
+    HEALPix _rf_dirbin;
 
     // relevant for any simulation mode that includes dust emission
     int _numDustEmissionWavelengths{0};

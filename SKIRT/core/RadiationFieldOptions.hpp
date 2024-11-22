@@ -18,6 +18,11 @@
     store the radiation field so that it can be probed for output. */
 class RadiationFieldOptions : public SimulationItem
 {
+    ENUM_DEF(InterpolationMode, NearestNeighbour)
+        ENUM_VAL(InterpolationMode, NearestNeighbour,
+                 "simplest form of interpolation: take the value of the nearest neighbour")
+    ENUM_END()
+
     ITEM_CONCRETE(RadiationFieldOptions, SimulationItem, "a set of options related to the radiation field")
 
         PROPERTY_BOOL(storeRadiationField, "store the radiation field so that it can be probed for output")
@@ -27,17 +32,21 @@ class RadiationFieldOptions : public SimulationItem
         ATTRIBUTE_INSERT(storeRadiationField,
                          "!Emission&!IteratePrimary&ForceScattering&storeRadiationField:RadiationField")
 
-        PROPERTY_BOOL(storeSpecificRadiationField,
-                      "store the direction dependent radiation field to use in reverse ray-tracing")
-        ATTRIBUTE_DEFAULT_VALUE(storeSpecificRadiationField, "false")
-        ATTRIBUTE_RELEVANT_IF(storeSpecificRadiationField, "storeRadiationField")
-        ATTRIBUTE_DISPLAYED_IF(storeSpecificRadiationField, "Level3")
+        PROPERTY_BOOL(storeDirection, "store the direction dependent radiation field to use in reverse ray-tracing")
+        ATTRIBUTE_DEFAULT_VALUE(storeDirection, "false")
+        ATTRIBUTE_RELEVANT_IF(storeDirection, "storeRadiationField")
+        ATTRIBUTE_DISPLAYED_IF(storeDirection, "Level3")
 
-        PROPERTY_INT(order, "HEALPix order")
-        ATTRIBUTE_MIN_VALUE(order, "0")
-        ATTRIBUTE_MAX_VALUE(order, "15")
-        ATTRIBUTE_DEFAULT_VALUE(order, "6")
-        ATTRIBUTE_RELEVANT_IF(order, "storeSpecificRadiationField")
+        PROPERTY_ENUM(interpolationMode, InterpolationMode,
+                      "what interpolation scheme to use to determine the radiation field in a given direction")
+        ATTRIBUTE_DEFAULT_VALUE(interpolationMode, "NearestNeighbour")
+        ATTRIBUTE_RELEVANT_IF(interpolationMode, "storeDirection")
+
+        PROPERTY_INT(HEALPIXorder, "HEALPix order: bin amount scales ~ order^2")
+        ATTRIBUTE_MIN_VALUE(HEALPIXorder, "0")
+        ATTRIBUTE_MAX_VALUE(HEALPIXorder, "15")
+        ATTRIBUTE_DEFAULT_VALUE(HEALPIXorder, "6")
+        ATTRIBUTE_RELEVANT_IF(HEALPIXorder, "storeDirection")
 
         PROPERTY_ITEM(radiationFieldWLG, DisjointWavelengthGrid, "the wavelength grid for storing the radiation field")
         ATTRIBUTE_DEFAULT_VALUE(radiationFieldWLG, "LogWavelengthGrid")
@@ -45,7 +54,7 @@ class RadiationFieldOptions : public SimulationItem
 
         PROPERTY_BOOL(useReverseRayTracing, "use RRT")
         ATTRIBUTE_DEFAULT_VALUE(useReverseRayTracing, "false")
-        ATTRIBUTE_RELEVANT_IF(useReverseRayTracing, "storeSpecificRadiationField")
+        ATTRIBUTE_RELEVANT_IF(useReverseRayTracing, "storeDirection")
 
     ITEM_END()
 };

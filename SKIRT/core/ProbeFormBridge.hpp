@@ -331,9 +331,6 @@ public:
                        const vector<const Snapshot*>& snapshots, VectorValueInEntity valueInEntity,
                        WeightInEntity weightInEntity);
 
-    void writeQuantity(string fileid, string quantity, string description, const vector<const Snapshot*>& snapshots,
-                       VectorListInEntity vectorListInEntity);
-
     //======== Querying: for use by all form types  =======
 
     /** This function returns the probe associated with this bridge upon construction. */

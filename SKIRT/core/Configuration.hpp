@@ -369,9 +369,9 @@ public:
         otherwise. */
     bool hasRadiationField() const { return _hasRadiationField; }
 
-    bool hasSpecificRadiationField() const { return _hasSpecificRadiationField; }
+    bool storeRadiationFieldDirection() const { return _storeRadiationFieldDirection; }
 
-    int order() const { return _order; }
+    int radiationFieldBinOrder() const { return _radiationFieldBinOrder; }
 
     bool usesReverseRayTracing() const { return _usesReverseRayTracing; }
 
@@ -517,8 +517,8 @@ private:
 
     // radiation field
     bool _hasRadiationField{false};
-    bool _hasSpecificRadiationField{false};
-    int _order{0};
+    bool _storeRadiationFieldDirection{false};
+    int _radiationFieldBinOrder{0};
     bool _usesReverseRayTracing{false};
     bool _hasPanRadiationField{false};
     bool _hasSecondaryRadiationField{false};
