@@ -257,6 +257,7 @@
 #include "TTauriDiskGeometry.hpp"
 #include "TemperatureProbe.hpp"
 #include "TemperatureWavelengthCellLibrary.hpp"
+#include "TetraMeshSpatialGrid.hpp"
 #include "ThemisDustMix.hpp"
 #include "ToddlersSED.hpp"
 #include "ToddlersSEDFamily.hpp"
@@ -495,6 +496,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<FileTreeSpatialGrid>();
     ItemRegistry::add<AdaptiveMeshSpatialGrid>();
     ItemRegistry::add<VoronoiMeshSpatialGrid>();
+    ItemRegistry::add<TetraMeshSpatialGrid>();
 
     // spatial grid policies
     ItemRegistry::add<TreePolicy>();
