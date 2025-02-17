@@ -290,6 +290,7 @@
 #include "VoronoiMeshSpatialGrid.hpp"
 #include "WeingartnerDraineDustMix.hpp"
 #include "XRayAtomicGasMix.hpp"
+#include "XRayIonicGasMix.hpp"
 #include "ZubkoDustMix.hpp"
 #include "ZubkoGraphiteGrainSizeDistribution.hpp"
 #include "ZubkoPAHGrainSizeDistribution.hpp"
@@ -592,6 +593,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<SpinFlipAbsorptionMix>();
     ItemRegistry::add<SpinFlipHydrogenGasMix>();
     ItemRegistry::add<XRayAtomicGasMix>();
+    ItemRegistry::add<XRayIonicGasMix>();
     ItemRegistry::add<EmittingGasMix>();
     ItemRegistry::add<NonLTELineGasMix>();
     ItemRegistry::add<LyaNeutralHydrogenGasMix>();
