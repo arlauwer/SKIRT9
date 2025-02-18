@@ -16,62 +16,29 @@
 #include "SnapshotParameter.hpp"
 #include "StringUtils.hpp"
 #include "TextInFile.hpp"
+#include <map>
+#include <regex>
 
 ////////////////////////////////////////////////////////////////////
-
-struct FluorescenceParams
-{
-    FluorescenceParams() {}
-
-    FluorescenceParams(const Array& a) : omega(a[0]), E(a[1]), W(a[2]) {}
-
-    // short Z;       // atomic number
-    // short n;       // principal quantum number of the shell
-    // short l;       // orbital quantum number of the subshell
-    double omega;  // fluorescence yield (1)
-    double E;      // (central) energy of the emitted photon (eV)
-    double W;      // FWHM of the Lorentz shape for the emitted photon (eV), or zero
-};
-
-struct PhotoAbsorbParams
-{
-    PhotoAbsorbParams() {}
-
-    PhotoAbsorbParams(const Array& a)
-        : Z(a[0]), n(a[1]), l(a[2]), Eth(a[3]), Emax(5e5), E0(a[4]), sigma0(a[5]), ya(a[6]), P(a[7]), yw(a[8]), y0(0.),
-          y1(0.)
-    {}
-
-    vector<FluorescenceParams> fluorescenceParamsList;
-
-    short Z;        // atomic number
-    short n;        // principal quantum number of the shell
-    short l;        // orbital quantum number of the subshell
-    double Eth;     // subshell ionization threshold energy (eV)
-    double Emax;    // maximum energy for validity of the formula (eV)
-    double E0;      // fit parameter (eV)
-    double sigma0;  // fit parameter (Mb = 10^-22 m^2)
-    double ya;      // fit parameter (1)
-    double P;       // fit parameter (1)
-    double yw;      // fit parameter (1)
-    double y0;      // fit parameter (1)
-    double y1;      // fit parameter (1)
-};
-
-struct IonParams
-{
-    IonParams(const Array& a) : Z(a[0]), N(a[1]), mass(a[2]) {}
-
-    short Z;
-    short N;
-    double mass;
-
-    PhotoAbsorbParams photoAbsorbParams;
-};
 
 namespace
 {
     // ---- common helper functions ----
+
+    static constexpr double defaultTemperature = 1;
+
+    // map of element names to atomic numbers
+    const std::map<std::string, short> elementToZ = {
+        {"H", 1},   {"He", 2},  {"Li", 3},  {"Be", 4},  {"B", 5},   {"C", 6},   {"N", 7},  {"O", 8},
+        {"F", 9},   {"Ne", 10}, {"Na", 11}, {"Mg", 12}, {"Al", 13}, {"Si", 14}, {"P", 15}, {"S", 16},
+        {"Cl", 17}, {"Ar", 18}, {"K", 19},  {"Ca", 20}, {"Sc", 21}, {"Ti", 22}, {"V", 23}, {"Cr", 24},
+        {"Mn", 25}, {"Fe", 26}, {"Co", 27}, {"Ni", 28}, {"Cu", 29}, {"Zn", 30}};
+
+    // masses of the elements in amu up to Z=30
+    const vector<double> masses = {1.0079,  4.0026, 6.941,   9.01218, 10.81,   12.011,  14.0067, 15.9994,
+                                   18.9984, 20.179, 22.9898, 24.305,  26.9815, 28.0855, 30.9738, 32.06,
+                                   35.453,  39.948, 39.0983, 40.08,   44.9559, 47.9,    50.9415, 51.996,
+                                   54.938,  55.847, 58.9332, 58.7,    63.546,  65.38};
 
     // convert photon energy in eV to and from wavelength in m (same conversion in both directions)
     constexpr double wavelengthToFromEnergy(double x)
@@ -116,13 +83,13 @@ namespace
 
     // load data from resource file with N columns into a vector of structs of type S that can be constructed
     // from an array with N elements, and return that vector
-    template<class S, int N> vector<S*> loadStruct(const SimulationItem* item, string filename, string description)
+    template<class S, int N> vector<S> loadStruct(const SimulationItem* item, string filename, string description)
     {
-        vector<S*> result;
-        TextInFile infile(item, filename, description, true);
+        vector<S> result;
+        TextInFile infile(item, filename, description, false);
         for (int i = 0; i != N; ++i) infile.addColumn(string());
         Array row;
-        while (infile.readRow(row)) result.emplace_back(new S(row));
+        while (infile.readRow(row)) result.emplace_back(row);
         return result;
     }
 
@@ -130,7 +97,7 @@ namespace
 
     // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
     // without taking into account thermal dispersion
-    double crossSection(double E, const PhotoAbsorbParams& p)
+    double crossSection(double E, const XRayIonicGasMix::PhotoAbsorbParams& p)
     {
         if (E < p.Eth || E >= p.Emax) return 0.;
 
@@ -145,7 +112,7 @@ namespace
     // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
     // approximating thermal dispersion by replacing the steep threshold transition by a sigmoid
     // error function with given parameters (dispersion and maximum value)
-    double crossSection(double E, double Es, double sigmamax, const PhotoAbsorbParams& p)
+    double crossSection(double E, double Es, double sigmamax, const XRayIonicGasMix::PhotoAbsorbParams& p)
     {
         if (E <= p.Eth - 2. * Es) return 0.;
         if (E >= p.Eth + 2. * Es) return crossSection(E, p);
@@ -387,18 +354,18 @@ namespace
         Random* _random{nullptr};
 
     public:
-        BoundComptonHelper(SimulationItem* item, int numAtoms)
+        BoundComptonHelper(SimulationItem* item)
         {
             // load bound Compton cross sections
-            _CSv = loadColumns(numAtoms + 1, item, "XRay_CS.txt", "bound Compton data");
-            _CSv[0] *= keVtoScaledEnergy;                            // convert from keV to 1
-            for (size_t Z = 1; Z <= numAtoms; ++Z) _CSv[Z] *= 1e-4;  // convert from cm2 to m2
+            _CSv = loadColumns(30 + 1, item, "XRay_CS.txt", "bound Compton data");
+            _CSv[0] *= keVtoScaledEnergy;                      // convert from keV to 1
+            for (size_t Z = 1; Z <= 30; ++Z) _CSv[Z] *= 1e-4;  // convert from cm2 to m2
 
             // load incoherent scattering functions
-            _SFv = loadColumns(numAtoms + 1, item, "XRay_SF.txt", "bound Compton data");
+            _SFv = loadColumns(30 + 1, item, "XRay_SF.txt", "bound Compton data");
 
             // load pdfs for projected momentum of target electron
-            _CPv = loadColumns(numAtoms + 1, item, "XRay_CP.txt", "bound Compton data");
+            _CPv = loadColumns(30 + 1, item, "XRay_CP.txt", "bound Compton data");
             _CPv[0] *= keVtoScaledEnergy;  // convert from keV to 1
 
             // load ionization energies
@@ -411,7 +378,7 @@ namespace
             NR::cdf<NR::interpolateLinLin>(xv, pv, Pv, _CPv[0], _CPv[1], _cumRange);
             _cumCPv.push_back(xv);
             _cumCPv.push_back(Pv);
-            for (size_t Z = 2; Z <= numAtoms; ++Z)
+            for (size_t Z = 2; Z <= 30; ++Z)
             {
                 NR::cdf<NR::interpolateLinLin>(xv, pv, Pv, _CPv[0], _CPv[1], _cumRange);
                 _cumCPv.push_back(Pv);
@@ -572,15 +539,15 @@ namespace
         Array _sintheta2v = Array(numTheta);
 
     public:
-        SmoothRayleighHelper(SimulationItem* item, int numAtoms)
+        SmoothRayleighHelper(SimulationItem* item)
         {
             // load smooth Rayleigh cross sections
-            _RSSv = loadColumns(numAtoms + 1, item, "XRay_RSS.txt", "smooth Rayleigh data");
-            _RSSv[0] *= keVtoScaledEnergy;                         // convert from keV to 1
-            for (int Z = 1; Z <= numAtoms; ++Z) _RSSv[Z] *= 1e-4;  // convert from cm2 to m2
+            _RSSv = loadColumns(30 + 1, item, "XRay_RSS.txt", "smooth Rayleigh data");
+            _RSSv[0] *= keVtoScaledEnergy;                   // convert from keV to 1
+            for (int Z = 1; Z <= 30; ++Z) _RSSv[Z] *= 1e-4;  // convert from cm2 to m2
 
             // load atomic form factors
-            _FFv = loadColumns(numAtoms + 1, item, "XRay_FF.txt", "smooth Rayleigh data");
+            _FFv = loadColumns(30 + 1, item, "XRay_FF.txt", "smooth Rayleigh data");
 
             // cache random nr generator and initialize the Thomson helper
             _random = item->find<Random>();
@@ -696,16 +663,16 @@ namespace
         Array _sintheta2v = Array(numTheta);
 
     public:
-        AnomalousRayleighHelper(SimulationItem* item, int numAtoms)
+        AnomalousRayleighHelper(SimulationItem* item)
         {
             // load anomalous Rayleigh cross sections, atomic form factors and anomalous scattering functions
-            _RSAv = loadColumns(2 * numAtoms + 2, item, "XRay_RSA.txt", "anomalous Rayleigh data");
-            _FFv = loadColumns(numAtoms + 1, item, "XRay_FF.txt", "anomalous Rayleigh data");
-            _F1v = loadColumns(2 * numAtoms + 2, item, "XRay_F1.txt", "anomalous Rayleigh data");
-            _F2v = loadColumns(2 * numAtoms + 2, item, "XRay_F2.txt", "anomalous Rayleigh data");
+            _RSAv = loadColumns(2 * 30 + 2, item, "XRay_RSA.txt", "anomalous Rayleigh data");
+            _FFv = loadColumns(30 + 1, item, "XRay_FF.txt", "anomalous Rayleigh data");
+            _F1v = loadColumns(2 * 30 + 2, item, "XRay_F1.txt", "anomalous Rayleigh data");
+            _F2v = loadColumns(2 * 30 + 2, item, "XRay_F2.txt", "anomalous Rayleigh data");
 
             // convert units
-            for (size_t Z = 1; Z <= numAtoms; ++Z)
+            for (size_t Z = 1; Z <= 30; ++Z)
             {
                 _RSAv[2 * Z] *= keVtoScaledEnergy;  // convert from keV to 1
                 _F1v[2 * Z] *= keVtoScaledEnergy;   // convert from keV to 1
@@ -815,31 +782,72 @@ void XRayIonicGasMix::setupSelfBefore()
     MaterialMix::setupSelfBefore();
     auto config = find<Configuration>();
 
-    // ---- load resources ----
+    auto pap = loadStruct<PhotoAbsorbParams, 10>(this, "PA_data.txt", "photoabsorption data");
+    auto flp = loadStruct<FluorescenceParams, 7>(this, "FL_data.txt", "fluorescence data");
 
-    // load all ions WIP
-    _numIons = 1;
-    _numAtoms = 1;
-    _numFluos = 1;
-    _ionParams.push_back(new IonParams({1, 1, 1.}));
-    _ionParams[0]->photoAbsorbParams = PhotoAbsorbParams({1, 1, 0, 13.60, 0.4298, 54750, 32.88, 2.963, 0});
-    _ionParams[0]->photoAbsorbParams.fluorescenceParamsList.push_back(FluorescenceParams({1, 5, 0}));
-    ///////// WIP
+    // obtain ion names from the ions property
+    string ionString = StringUtils::squeeze(ions());
+    if (ionString.empty()) throw FATALERROR("No ions specified for XRayIonicGasMix");
 
-    _fluorescenceMass.resize(_numFluos);
-    _fluorescenceParams.resize(_numFluos);
-    int f = 0;
-    for (int i = 0; i < _numIons; ++i)
+    for (string ion : StringUtils::split(ionString, ","))
     {
-        const auto ion = _ionParams[i];
-        const auto& pap = ion->photoAbsorbParams;
-        for (const auto& flp : pap.fluorescenceParamsList)
+        // split ion string into element symbol and ionization number
+        std::regex pattern("([A-Za-z]+)([0-9]+)");
+        std::smatch match;
+
+        if (!std::regex_match(ion, match, pattern)) throw FATALERROR("Invalid ion format: " + ion);
+
+        // get ion parameters
+        int Z = elementToZ.at(match[1].str());
+        int N = Z - std::stoi(match[2].str()) + 1;
+        if (N < 1 || N > Z) throw FATALERROR("Invalid ion format: " + ion);
+        double mass = masses[Z - 1];
+        // add ion parameters
+        _ionParams.emplace_back(Z, N, mass, ion);
+
+        // add PA for present ions
+        for (const auto& pa : pap)
         {
-            _fluorescenceMass[f] = ion->mass;
-            _fluorescenceParams[f] = &flp;
-            f++;
+            if (pa.Z == Z && pa.N == N)
+            {
+                _photoAbsorbParams.push_back(pa);
+
+                // add index of corresponding ion
+                for (int i = 0; i < _ionParams.size(); i++)
+                {
+                    auto& ion = _ionParams[i];
+                    if (ion.Z == pa.Z && ion.N == pa.N)
+                    {
+                        _photoAbsorbParams.back().ionIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // add FL for present ions
+        for (const auto& fl : flp)
+        {
+            if (fl.Z == Z && fl.N == N)
+            {
+                _fluorescenceParams.push_back(fl);
+
+                // add index of corresponding photo-absorption
+                for (int i = 0; i < _photoAbsorbParams.size(); i++)
+                {
+                    auto& pa = _photoAbsorbParams[i];
+                    if (pa.Z == fl.Z && pa.N == fl.N && pa.n == fl.n && pa.l == fl.l)
+                    {
+                        _fluorescenceParams.back().papIndex = i;
+                        break;
+                    }
+                }
+            }
         }
     }
+    _numIons = _ionParams.size();
+    _numPa = _photoAbsorbParams.size();
+    _numFl = _fluorescenceParams.size();
 
     // create scattering helpers depending on the user-configured implementation type;
     // the respective helper constructors load the required bound-electron scattering resources
@@ -858,12 +866,12 @@ void XRayIonicGasMix::setupSelfBefore()
             _com = new FreeComptonWithPolarizationHelper(this);
             break;
         case BoundElectrons::Good:
-            _ray = new SmoothRayleighHelper(this, _numAtoms);
-            _com = new BoundComptonHelper(this, _numAtoms);
+            _ray = new SmoothRayleighHelper(this);
+            _com = new BoundComptonHelper(this);
             break;
         case BoundElectrons::Exact:
-            _ray = new AnomalousRayleighHelper(this, _numAtoms);
-            _com = new BoundComptonHelper(this, _numAtoms);
+            _ray = new AnomalousRayleighHelper(this);
+            _com = new BoundComptonHelper(this);
             break;
     }
 }
@@ -909,12 +917,12 @@ bool XRayIonicGasMix::hasScatteringDispersion() const
 vector<SnapshotParameter> XRayIonicGasMix::parameterInfo() const
 {
     vector<SnapshotParameter> descriptors;
-    descriptors.push_back(SnapshotParameter::temperature());
 
-    for (int f = 0; f != _numIons; ++f)
+    for (auto& ion : _ionParams)
     {
-        descriptors.push_back(SnapshotParameter::custom("ion"));
+        descriptors.push_back(SnapshotParameter::custom(ion.name));
     }
+
     return descriptors;
 }
 
@@ -922,12 +930,13 @@ vector<SnapshotParameter> XRayIonicGasMix::parameterInfo() const
 
 vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 {
-    // add hard-coded ions here for now. Later we should try to use some sort of useColumns="auto" to automatically
-    // determine the columns
-    vector<StateVariable> vars = {StateVariable::numberDensity(), StateVariable::temperature()};
+    vector<StateVariable> vars;
+    vars.push_back(StateVariable::numberDensity());
+    vars.push_back(StateVariable::temperature());
+
     for (int i = 0; i < _numIons; ++i)
     {
-        vars.push_back(StateVariable::custom(i, "ion" + std::to_string(i), "ionization fraction"));
+        vars.push_back(StateVariable::custom(i, _ionParams[i].name, "ionization fraction"));
     }
     return vars;
 }
@@ -939,12 +948,22 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metal
 {
     if (state->numberDensity() > 0.)
     {
-        double defaultTemperature = 1;
         state->setTemperature(temperature >= 0. ? temperature : defaultTemperature);
 
-        for (int i = 0; i < _numIons; ++i)
+        if (params.size())
         {
-            state->setCustom(i, 1.); // hard code the ionization fraction to 1 for now
+            for (int i = 0; i < _numIons; ++i)
+            {
+                state->setCustom(i, params[i]);
+            }
+        }
+        else
+        {
+            // set ionization fractions to default values
+            for (int i = 0; i < _numIons; ++i)
+            {
+                state->setCustom(i, 1.);
+            }
         }
     }
 }
@@ -1002,18 +1021,17 @@ double XRayIonicGasMix::opacityExt(double lambda, const MaterialState* state, co
     for (int i = 0; i < _numIons; ++i)
     {
         double abund = state->custom(i);
-        int Z = _ionParams[i]->Z;
+        int Z = _ionParams[i].Z;
 
         sigma += (_ray->sectionSca(lambda, Z) + _com->sectionSca(lambda, Z)) * abund;
     }
 
     // photo-absorption and fluorescence
-    for (int i = 0; i < _numIons; ++i)
+    for (const auto& pap : _photoAbsorbParams)
     {
-        const auto ion = _ionParams[i];
-        const auto pap = ion->photoAbsorbParams;
-        double mass = ion->mass;
-        double abund = state->custom(i);
+        auto& ion = _ionParams[pap.ionIndex];
+        double abund = state->custom(pap.ionIndex);
+        double mass = ion.mass;
 
         // use thermal sigmoid
         double Es = pap.Eth * vtherm(state->temperature(), mass) / Constants::c();
@@ -1030,37 +1048,37 @@ double XRayIonicGasMix::opacityExt(double lambda, const MaterialState* state, co
 
 Array XRayIonicGasMix::sigmaSca(double lambda, const MaterialState* state) const
 {
-    Array sigma(2 * _numIons + _numFluos);
+    // rayleigh, compton, fluorescence
+    Array sigma(_numIons + _numIons + _numFl);
+
     double E = wavelengthToFromEnergy(lambda);
 
     // bound electron scattering
     for (int i = 0; i < _numIons; ++i)
     {
         double abund = state->custom(i);
-        int Z = _ionParams[i]->Z;
+        int Z = _ionParams[i].Z;
+        int N = _ionParams[i].N;  // might use in the future
 
+        // possible use N in the future here as well
         sigma[i] = _ray->sectionSca(lambda, Z) * abund;
         sigma[_numIons + i] = _com->sectionSca(lambda, Z) * abund;
     }
 
     // fluorescence
-    int f = 0;
-    for (int i = 0; i < _numIons; ++i)
+    for (int f = 0; f < _numFl; ++f)
     {
-        const auto ion = _ionParams[i];
-        const auto pap = ion->photoAbsorbParams;
-        double mass = ion->mass;
-        double abund = state->custom(i);
+        const auto& flp = _fluorescenceParams[f];
+        const auto& pap = _photoAbsorbParams[flp.papIndex];
+        const auto& ion = _ionParams[pap.ionIndex];
+        double abund = state->custom(pap.ionIndex);
+        double mass = ion.mass;
 
         // use thermal sigmoid
         double Es = pap.Eth * vtherm(state->temperature(), mass) / Constants::c();
         double sigmamax = crossSection(pap.Eth + 2. * Es, pap);
 
-        for (const auto& flp : pap.fluorescenceParamsList)
-        {
-            sigma[2 * _numIons + f] = crossSection(E, Es, sigmamax, pap) * abund * flp.omega;
-            f++;
-        }
+        sigma[2 * _numIons + f] = crossSection(E, Es, sigmamax, pap) * abund * flp.omega;
     }
 
     return sigma;
@@ -1079,16 +1097,27 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
         Array sigma = sigmaSca(lambda, state);
         Array cumsigma;
         NR::cdf(cumsigma, sigma);
+
+        // rayleigh,  compton, fluorescence
+        // _numIons, _numIons, _numFl
         scatinfo->species = NR::locateClip(cumsigma, random()->uniform());
 
         // determine thermal velocity
         if (state->temperature() > 0)
         {
             double v;
-            if (scatinfo->species < 2 * _numIons)  // bound electron scattering
-                v = vtherm(state->temperature(), _ionParams[scatinfo->species % _numIons]->mass);
-            else  // fluorescence
-                v = vtherm(state->temperature(), _fluorescenceMass[scatinfo->species - 2 * _numIons]);
+            if (scatinfo->species < 2 * _numIons)
+            {  // bound electron scattering
+                auto& ion = _ionParams[scatinfo->species % _numIons];
+                v = vtherm(state->temperature(), ion.mass);
+            }
+            else
+            {  // fluorescence
+                auto& flp = _fluorescenceParams[scatinfo->species - 2 * _numIons];
+                auto& pap = _photoAbsorbParams[flp.papIndex];
+                auto& ion = _ionParams[pap.ionIndex];
+                v = vtherm(state->temperature(), ion.mass);
+            }
             scatinfo->velocity = v * random()->maxwell();
         }
 
@@ -1096,18 +1125,18 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
         if (scatinfo->species >= 2 * _numIons)
         {
             int f = scatinfo->species - 2 * _numIons;
-            const auto* flp = _fluorescenceParams[f];
+            const auto& flp = _fluorescenceParams[f];
 
-            if (!flp->W)
+            if (!flp.W)
             {
                 // if the line shape has zero width, convert the central enery to the fixed wavelength
-                scatinfo->lambda = wavelengthToFromEnergy(flp->E);
+                scatinfo->lambda = wavelengthToFromEnergy(flp.E);
             }
             else
             {
                 while (true)
                 {
-                    scatinfo->lambda = wavelengthToFromEnergy(flp->E + flp->W / 2. * random()->lorentz());
+                    scatinfo->lambda = wavelengthToFromEnergy(flp.E + flp.W / 2. * random()->lorentz());
                     if (nonZeroRange.contains(scatinfo->lambda)) break;
                 }
             }
@@ -1132,14 +1161,14 @@ void XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     if (scatinfo->species < _numIons)
     {
         const auto ion = _ionParams[scatinfo->species];
-        _ray->peeloffScattering(I, lambda, ion->Z, pp->direction(), bfkobs);
+        _ray->peeloffScattering(I, lambda, ion.Z, pp->direction(), bfkobs);
     }
 
     // Compton scattering in electron rest frame; with support for polarization if enabled
     else if (scatinfo->species < 2 * _numIons)
     {
         const auto ion = _ionParams[scatinfo->species - _numIons];
-        _com->peeloffScattering(I, Q, U, V, lambda, ion->Z, pp->direction(), bfkobs, bfky, pp);
+        _com->peeloffScattering(I, Q, U, V, lambda, ion.Z, pp->direction(), bfkobs, bfky, pp);
     }
 
     // fluorescence
@@ -1175,7 +1204,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
     if (scatinfo->species < _numIons)
     {
         const auto ion = _ionParams[scatinfo->species];
-        bfknew = _ray->performScattering(lambda, ion->Z, pp->direction());
+        bfknew = _ray->performScattering(lambda, ion.Z, pp->direction());
     }
 
     // Compton scattering, with support for polarization if enabled:
@@ -1183,7 +1212,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
     else if (scatinfo->species < 2 * _numIons)
     {
         const auto ion = _ionParams[scatinfo->species - _numIons];
-        bfknew = _com->performScattering(lambda, ion->Z, pp->direction(), pp);
+        bfknew = _com->performScattering(lambda, ion.Z, pp->direction(), pp);
     }
 
     // fluorescence, always unpolarized and isotropic

@@ -13,9 +13,6 @@
 
 ////////////////////////////////////////////////////////////////////
 
-struct IonParams;
-struct FluorescenceParams;
-
 class XRayIonicGasMix : public MaterialMix
 {
     ENUM_DEF(BoundElectrons, None, Free, FreeWithPolarization, Good, Exact)
@@ -27,18 +24,9 @@ class XRayIonicGasMix : public MaterialMix
         ENUM_VAL(BoundElectrons, Exact, "use anomalous Rayleigh scattering and exact bound-Compton scattering")
     ENUM_END()
 
-    ITEM_CONCRETE(XRayIonicGasMix, MaterialMix,
-                  "Ionised gas mix")
-
-        PROPERTY_STRING(filename, "the name of the file with ion abundancies per zone")
+    ITEM_CONCRETE(XRayIonicGasMix, MaterialMix, "Ionised gas mix")
 
         PROPERTY_STRING(ions, "the names of the ions for each element seperated by , (e.g. H1,He2,Fe1,Fe14,...)")
-
-        PROPERTY_DOUBLE_LIST(abundancies, "the abundancies for the ions")
-        ATTRIBUTE_MIN_VALUE(abundancies, "[0")
-        ATTRIBUTE_MAX_VALUE(abundancies, "1]")
-        ATTRIBUTE_REQUIRED_IF(abundancies, "false")
-        ATTRIBUTE_DISPLAYED_IF(abundancies, "Level2")
 
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
@@ -105,17 +93,61 @@ public:
     // base class for bound-electron scattering helpers (public because we derive from it in anonymous namespace)
     class ScatteringHelper;
 
+    struct IonParams
+    {
+        IonParams(short Z, short N, double mass, string name) : Z(Z), N(N), mass(mass), name(name) {}
+
+        short Z;      // atomic number
+        short N;      // number of electrons
+        double mass;  // mass of the ion (amu)
+        string name;  // name of the ion (eg. Fe1 for neutral iron)
+    };
+
+    struct FluorescenceParams
+    {
+        FluorescenceParams(const Array& a) : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), omega(a[4]), E(a[5]), W(a[6]) {}
+
+        int papIndex{-1};  // index of the photo-absorption transition
+        short Z;           // atomic number
+        short N;           // number of electrons
+        short n;           // principal quantum number of the shell with the hole
+        short l;           // orbital quantum number of the subshell with the hole
+        double omega;      // fluorescence yield (1)
+        double E;          // (central) energy of the emitted photon (eV)
+        double W;          // FWHM of the Lorentz shape for the emitted photon (eV), or zero
+    };
+
+    struct PhotoAbsorbParams
+    {
+        PhotoAbsorbParams(const Array& a)
+            : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), Eth(a[4]), E0(a[5]), sigma0(a[6]), ya(a[7]), P(a[8]), yw(a[9])
+        {}
+
+        int ionIndex{-1};   // index of the ion
+        short Z;            // atomic number
+        short N;            // number of electrons
+        short n;            // principal quantum number of the shell
+        short l;            // orbital quantum number of the subshell
+        double Eth;         // subshell ionization threshold energy (eV)
+        double Emax = 5e5;  // maximum energy for validity of the formula (eV)
+        double E0;          // fit parameter (eV)
+        double sigma0;      // fit parameter (Mb = 10^-22 m^2)
+        double ya;          // fit parameter (1)
+        double P;           // fit parameter (1)
+        double yw;          // fit parameter (1)
+        double y0 = 0.;     // fit parameter (1)
+        double y1 = 0.;     // fit parameter (1)
+    };
+
 private:
     // all data members are precalculated in setupSelfAfter()
 
-    int _numIons;   // total number of ions
-    int _numAtoms;  // all unique Z
-    int _numFluos;  // number of fluorescence transitions
-
-    Array _fluorescenceMass;  // mass of ion for each fluorescence transition, used for setScatteringInfoIfNeeded
-
-    vector<IonParams*> _ionParams;
-    vector<const FluorescenceParams*> _fluorescenceParams;  // used for setScatteringInfoIfNeeded
+    int _numIons;  // total number of ions
+    int _numPa;    // number of photo-absorption transitions
+    int _numFl;    // number of fluorescence transitions
+    vector<IonParams> _ionParams;
+    vector<PhotoAbsorbParams> _photoAbsorbParams;
+    vector<FluorescenceParams> _fluorescenceParams;
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
