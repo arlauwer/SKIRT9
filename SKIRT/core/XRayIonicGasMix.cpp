@@ -1007,7 +1007,7 @@ double XRayIonicGasMix::opacityAbs(double lambda, const MaterialState* state, co
 
 double XRayIonicGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
-    return sigmaSca(lambda, state).sum();
+    return sigmaSca(lambda, state).sum() * state->numberDensity();
 }
 
 ////////////////////////////////////////////////////////////////////
