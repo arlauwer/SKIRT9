@@ -784,11 +784,13 @@ void XRayIonicGasMix::setupSelfBefore()
 
     auto pap = loadStruct<PhotoAbsorbParams, 10>(this, "PA_data.txt", "photoabsorption data");
     auto flp = loadStruct<FluorescenceParams, 7>(this, "FL_data.txt", "fluorescence data");
+    auto bbp = loadStruct<BoundBoundParams, 4>(this, "BB_data.txt", "bound-bound data");
 
     // obtain ion names from the ions property
     string ionString = StringUtils::squeeze(ions());
     if (ionString.empty()) throw FATALERROR("No ions specified for XRayIonicGasMix");
 
+    // read ions
     for (string ion : StringUtils::split(ionString, ","))
     {
         // split ion string into element symbol and ionization number
@@ -803,51 +805,46 @@ void XRayIonicGasMix::setupSelfBefore()
         if (N < 1 || N > Z) throw FATALERROR("Invalid ion format: " + ion);
         double mass = masses[Z - 1];
         // add ion parameters
-        _ionParams.emplace_back(Z, N, mass, ion);
+        IonParams ionParams(Z, N, mass, ion);
+        _ionParams.push_back(ionParams);
+    }
 
-        // add PA for present ions
-        for (const auto& pa : pap)
+    for (int i = 0; i < _ionParams.size(); i++)
+    {
+        auto& ion = _ionParams[i];
+
+        // add all PA this ion
+        for (int p = 0; p < pap.size(); p++)
         {
-            if (pa.Z == Z && pa.N == N)
+            auto& pa = pap[p];
+
+            if (pa.Z == ion.Z && pa.N == ion.N)
             {
+                pa.ionIndex = i;
                 _photoAbsorbParams.push_back(pa);
 
-                // add index of corresponding ion
-                for (int i = 0; i < _ionParams.size(); i++)
+                // add all FL for this PA
+                for (auto& fl : flp)
                 {
-                    auto& ion = _ionParams[i];
-                    if (ion.Z == pa.Z && ion.N == pa.N)
+                    if (fl.Z == pa.Z && fl.N == pa.N && fl.n == pa.n && fl.l == pa.l)
                     {
-                        _photoAbsorbParams.back().ionIndex = i;
-                        break;
+                        fl.papIndex = p;
+                        _fluorescenceParams.push_back(fl);
                     }
                 }
             }
         }
 
-        // add FL for present ions
-        for (const auto& fl : flp)
+        // add all BB for this ion
+        for (auto& bb : bbp)
         {
-            if (fl.Z == Z && fl.N == N)
+            if (bb.Z == ion.Z && bb.N == ion.N)
             {
-                _fluorescenceParams.push_back(fl);
-
-                // add index of corresponding photo-absorption
-                for (int i = 0; i < _photoAbsorbParams.size(); i++)
-                {
-                    auto& pa = _photoAbsorbParams[i];
-                    if (pa.Z == fl.Z && pa.N == fl.N && pa.n == fl.n && pa.l == fl.l)
-                    {
-                        _fluorescenceParams.back().papIndex = i;
-                        break;
-                    }
-                }
+                bb.ionIndex = i;
+                _boundBoundParams.push_back(bb);
             }
         }
     }
-    _numIons = _ionParams.size();
-    _numPa = _photoAbsorbParams.size();
-    _numFl = _fluorescenceParams.size();
 
     // create scattering helpers depending on the user-configured implementation type;
     // the respective helper constructors load the required bound-electron scattering resources
@@ -1234,3 +1231,49 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
     // execute the scattering event in the photon packet
     pp->scatter(bfknew, state->bulkVelocity(), lambda);
 }
+
+////////////////////////////////////////////////////////////////////
+
+Array XRayIonicGasMix::lineEmissionCenters() const
+{
+    int numBB = _boundBoundParams.size();
+    Array centers(numBB);
+    for (int i = 0; i < numBB; ++i)
+    {
+        centers[i] = wavelengthToFromEnergy(_boundBoundParams[i].E);
+    }
+    return centers;
+}
+
+////////////////////////////////////////////////////////////////////
+
+Array XRayIonicGasMix::lineEmissionMasses() const
+{
+    int numBB = _boundBoundParams.size();
+    Array masses(numBB);
+    for (int i = 0; i < numBB; ++i)
+    {
+        masses[i] = _ionParams[_boundBoundParams[i].ionIndex].mass;
+    }
+    return masses;
+}
+
+////////////////////////////////////////////////////////////////////
+
+Array XRayIonicGasMix::lineEmissionSpectrum(const MaterialState* state, const Array& /*Jv*/) const
+{
+    int numBB = _boundBoundParams.size();
+    Array luminosities(numBB);
+    if (state->numberDensity() > 0.)
+    {
+        for (int k = 0; k != numBB; ++k)
+        {
+            auto& bb = _boundBoundParams[k];
+            luminosities[k] = state->volume() * bb.E * bb.A * state->custom(bb.ionIndex); // WIP CUSTOM BB.ionIndex + ??
+        }
+            
+    }
+    return luminosities;
+}
+
+////////////////////////////////////////////////////////////////////

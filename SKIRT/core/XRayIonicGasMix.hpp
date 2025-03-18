@@ -7,13 +7,14 @@
 #define XRAYIONICGASMIX_HPP
 
 #include "ArrayTable.hpp"
+#include "EmittingGasMix.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
 #include "SnapshotParameter.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
-class XRayIonicGasMix : public MaterialMix
+class XRayIonicGasMix : public EmittingGasMix
 {
     ENUM_DEF(BoundElectrons, None, Free, FreeWithPolarization, Good, Exact)
         ENUM_VAL(BoundElectrons, None, "ignore bound electrons")
@@ -25,6 +26,7 @@ class XRayIonicGasMix : public MaterialMix
     ENUM_END()
 
     ITEM_CONCRETE(XRayIonicGasMix, MaterialMix, "Ionised gas mix")
+        ATTRIBUTE_TYPE_INSERT(XRayIonicGasMix, "GasMix,CustomMediumState")
 
         PROPERTY_STRING(ions, "the names of the ions for each element seperated by , (e.g. H1,He2,Fe1,Fe14,...)")
 
@@ -49,6 +51,8 @@ public:
     bool hasExtraSpecificState() const override;
 
     bool hasScatteringDispersion() const override;
+
+    bool hasLineEmission() const override;
 
     //============= Medium state setup =============
 
@@ -86,6 +90,14 @@ public:
                            const MaterialState* state, const PhotonPacket* pp) const override;
 
     void performScattering(double lambda, const MaterialState* state, PhotonPacket* pp) const override;
+
+    //======== Secondary emission =======
+
+    Array lineEmissionCenters() const override;
+
+    Array lineEmissionMasses() const override;
+
+    Array lineEmissionSpectrum(const MaterialState* state, const Array& Jv) const override;
 
     //======================== Data Members ========================
 
@@ -139,15 +151,27 @@ public:
         double y1 = 0.;     // fit parameter (1)
     };
 
+    struct BoundBoundParams
+    {
+        BoundBoundParams(const Array& a) : Z(a[0]), N(a[1]), E(a[2]), A(a[3]) {}
+
+        int ionIndex{-1};  // index of the ion
+        short Z;           // atomic number
+        short N;           // number of electrons
+        double E;          // energy of the transition (eV)
+        double A;          // Einstein A coefficient (s^-1)
+    };
+
 private:
     // all data members are precalculated in setupSelfAfter()
 
-    int _numIons;  // total number of ions
-    int _numPa;    // number of photo-absorption transitions
-    int _numFl;    // number of fluorescence transitions
+    // int _numIons;  // total number of ions
+    // int _numPa;    // number of photo-absorption transitions
+    // int _numFl;    // number of fluorescence transitions
     vector<IonParams> _ionParams;
     vector<PhotoAbsorbParams> _photoAbsorbParams;
     vector<FluorescenceParams> _fluorescenceParams;
+    vector<BoundBoundParams> _boundBoundParams;
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
