@@ -160,14 +160,16 @@ public:
         short N;           // number of electrons
         double E;          // energy of the transition (eV)
         double A;          // Einstein A coefficient (s^-1)
+        // add Chianti index?
     };
 
 private:
     // all data members are precalculated in setupSelfAfter()
 
-    // int _numIons;  // total number of ions
+    int _numIons;  // total number of ions
     // int _numPa;    // number of photo-absorption transitions
-    // int _numFl;    // number of fluorescence transitions
+    int _numFl;  // number of fluorescence transitions
+    int _numBB;  // number of bound-bound transitions
     vector<IonParams> _ionParams;
     vector<PhotoAbsorbParams> _photoAbsorbParams;
     vector<FluorescenceParams> _fluorescenceParams;

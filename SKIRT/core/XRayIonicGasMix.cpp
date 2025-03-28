@@ -784,7 +784,8 @@ void XRayIonicGasMix::setupSelfBefore()
 
     auto pap = loadStruct<PhotoAbsorbParams, 10>(this, "PA_data.txt", "photoabsorption data");
     auto flp = loadStruct<FluorescenceParams, 7>(this, "FL_data.txt", "fluorescence data");
-    auto bbp = loadStruct<BoundBoundParams, 4>(this, "BB_data.txt", "bound-bound data");
+    // auto bbp = loadStruct<BoundBoundParams, 4>(this, "BB_data.txt", "bound-bound data");
+    auto bbp = vector<BoundBoundParams>();  // temp empty
 
     // obtain ion names from the ions property
     string ionString = StringUtils::squeeze(ions());
@@ -793,15 +794,16 @@ void XRayIonicGasMix::setupSelfBefore()
     // read ions
     for (string ion : StringUtils::split(ionString, ","))
     {
+        ion = StringUtils::squeeze(ion);
         // split ion string into element symbol and ionization number
-        std::regex pattern("([A-Za-z]+)([0-9]+)");
+        std::regex pattern("([A-Za-z]+)\\+?([0-9]*)");
         std::smatch match;
 
         if (!std::regex_match(ion, match, pattern)) throw FATALERROR("Invalid ion format: " + ion);
 
         // get ion parameters
         int Z = elementToZ.at(match[1].str());
-        int N = Z - std::stoi(match[2].str()) + 1;
+        int N = Z - std::stoi(match[2].str());
         if (N < 1 || N > Z) throw FATALERROR("Invalid ion format: " + ion);
         double mass = masses[Z - 1];
         // add ion parameters
@@ -809,15 +811,15 @@ void XRayIonicGasMix::setupSelfBefore()
         _ionParams.push_back(ionParams);
     }
 
-    for (int i = 0; i < _ionParams.size(); i++)
+    _numIons = _ionParams.size();
+
+    for (int i = 0; i < _numIons; i++)
     {
         auto& ion = _ionParams[i];
 
         // add all PA this ion
-        for (int p = 0; p < pap.size(); p++)
+        for (auto& pa : pap)
         {
-            auto& pa = pap[p];
-
             if (pa.Z == ion.Z && pa.N == ion.N)
             {
                 pa.ionIndex = i;
@@ -828,6 +830,7 @@ void XRayIonicGasMix::setupSelfBefore()
                 {
                     if (fl.Z == pa.Z && fl.N == pa.N && fl.n == pa.n && fl.l == pa.l)
                     {
+                        int p = _photoAbsorbParams.size() - 1;
                         fl.papIndex = p;
                         _fluorescenceParams.push_back(fl);
                     }
@@ -845,6 +848,9 @@ void XRayIonicGasMix::setupSelfBefore()
             }
         }
     }
+
+    _numFl = _fluorescenceParams.size();
+    _numBB = _boundBoundParams.size();
 
     // create scattering helpers depending on the user-configured implementation type;
     // the respective helper constructors load the required bound-electron scattering resources
@@ -911,6 +917,13 @@ bool XRayIonicGasMix::hasScatteringDispersion() const
 
 ////////////////////////////////////////////////////////////////////
 
+bool XRayIonicGasMix::hasLineEmission() const
+{
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////
+
 vector<SnapshotParameter> XRayIonicGasMix::parameterInfo() const
 {
     vector<SnapshotParameter> descriptors;
@@ -931,10 +944,22 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     vars.push_back(StateVariable::numberDensity());
     vars.push_back(StateVariable::temperature());
 
+    // ion abundances
     for (int i = 0; i < _numIons; ++i)
     {
-        vars.push_back(StateVariable::custom(i, _ionParams[i].name, "ionization fraction"));
+        auto& ion = _ionParams[i];
+        vars.push_back(StateVariable::custom(i, ion.name, "ionization fraction"));
     }
+
+    // excited state populations
+    for (int i = 0; i < _numBB; ++i)
+    {
+        // actually only need unique excited levels, so not all transitions!
+        auto& bb = _boundBoundParams[i];
+        auto& ion = _ionParams[bb.ionIndex];
+        vars.push_back(StateVariable::custom(_numIons + i, ion.name, "excited state population"));
+    }
+
     return vars;
 }
 
@@ -1269,9 +1294,9 @@ Array XRayIonicGasMix::lineEmissionSpectrum(const MaterialState* state, const Ar
         for (int k = 0; k != numBB; ++k)
         {
             auto& bb = _boundBoundParams[k];
-            luminosities[k] = state->volume() * bb.E * bb.A * state->custom(bb.ionIndex); // WIP CUSTOM BB.ionIndex + ??
+            luminosities[k] =
+                state->volume() * bb.E * bb.A * state->custom(bb.ionIndex);  // WIP CUSTOM BB.ionIndex + ??
         }
-            
     }
     return luminosities;
 }
