@@ -46,7 +46,7 @@ public:
 
         The number and type of parameters must match the information returned by the
         parameterInfo() function; if not the behavior is undefined. */
-    virtual const MaterialMix* mix(const Array& parameters) const = 0;
+    virtual const MaterialMix* mix(const Array& parameters) = 0;
 };
 
 ////////////////////////////////////////////////////////////////////

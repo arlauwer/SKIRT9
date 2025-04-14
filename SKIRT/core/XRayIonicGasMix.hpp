@@ -30,6 +30,10 @@ class XRayIonicGasMix : public EmittingGasMix
 
         PROPERTY_STRING(ions, "the names of the ions for each element seperated by , (e.g. H1,He2,Fe1,Fe14,...)")
 
+        PROPERTY_DOUBLE_LIST(abundances, "the abundances of the ions in the same order as the ions property")
+
+        PROPERTY_DOUBLE(temperature, "the temperature of the gas in K")
+
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
         ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level3")
@@ -38,6 +42,14 @@ class XRayIonicGasMix : public EmittingGasMix
     //============= Construction - Setup - Destruction =============
 
 public:
+    /** This constructor can be invoked programmatically by classes that use a hard-coded SED
+        family (as opposed to selected through the ski file). Before the constructor returns, the
+        newly created object is hooked up as a child to the specified parent in the simulation
+        hierarchy (so it will automatically be deleted), and its setup() function has been called.
+        */
+    explicit XRayIonicGasMix(SimulationItem* parent, string ions, BoundElectrons boundElectrons,
+                             vector<double> abundances, double temperature);
+
     void setupSelfBefore() override;
 
     ~XRayIonicGasMix();
@@ -56,12 +68,7 @@ public:
 
     //============= Medium state setup =============
 
-    vector<SnapshotParameter> parameterInfo() const override;
-
     vector<StateVariable> specificStateVariableInfo() const override;
-
-    void initializeSpecificState(MaterialState* state, double metallicity, double temperature,
-                                 const Array& params) const override;
 
     //============= Low-level material properties =============
 
@@ -105,9 +112,9 @@ public:
     // base class for bound-electron scattering helpers (public because we derive from it in anonymous namespace)
     class ScatteringHelper;
 
-    struct IonParams
+    struct IonParam
     {
-        IonParams(short Z, short N, double mass, string name) : Z(Z), N(N), mass(mass), name(name) {}
+        IonParam(short Z, short N, double mass, string name) : Z(Z), N(N), mass(mass), name(name) {}
 
         short Z;      // atomic number
         short N;      // number of electrons
@@ -115,9 +122,9 @@ public:
         string name;  // name of the ion (eg. Fe1 for neutral iron)
     };
 
-    struct FluorescenceParams
+    struct FluorescenceParam
     {
-        FluorescenceParams(const Array& a) : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), omega(a[4]), E(a[5]), W(a[6]) {}
+        FluorescenceParam(const Array& a) : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), omega(a[4]), E(a[5]), W(a[6]) {}
 
         int papIndex{-1};  // index of the photo-absorption transition
         short Z;           // atomic number
@@ -129,9 +136,9 @@ public:
         double W;          // FWHM of the Lorentz shape for the emitted photon (eV), or zero
     };
 
-    struct PhotoAbsorbParams
+    struct PhotoAbsorbParam
     {
-        PhotoAbsorbParams(const Array& a)
+        PhotoAbsorbParam(const Array& a)
             : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), Eth(a[4]), E0(a[5]), sigma0(a[6]), ya(a[7]), P(a[8]), yw(a[9])
         {}
 
@@ -151,9 +158,9 @@ public:
         double y1 = 0.;     // fit parameter (1)
     };
 
-    struct BoundBoundParams
+    struct BoundBoundParam
     {
-        BoundBoundParams(const Array& a) : Z(a[0]), N(a[1]), E(a[2]), A(a[3]) {}
+        BoundBoundParam(const Array& a) : Z(a[0]), N(a[1]), E(a[2]), A(a[3]) {}
 
         int ionIndex{-1};  // index of the ion
         short Z;           // atomic number
@@ -164,16 +171,37 @@ public:
     };
 
 private:
+    // int _numIons;  // total number of ions
+    // // int _numPa;    // number of photo-absorption transitions
+    // int _numFl;  // number of fluorescence transitions
+    // int _numBB;  // number of bound-bound transitions
+    // vector<IonParams> _ionParams;
+    // vector<PhotoAbsorbParams> _photoAbsorbParams;
+    // vector<FluorescenceParams> _fluorescenceParams;
+    // vector<BoundBoundParams> _boundBoundParams;
+
     // all data members are precalculated in setupSelfAfter()
 
-    int _numIons;  // total number of ions
-    // int _numPa;    // number of photo-absorption transitions
-    int _numFl;  // number of fluorescence transitions
-    int _numBB;  // number of bound-bound transitions
-    vector<IonParams> _ionParams;
-    vector<PhotoAbsorbParams> _photoAbsorbParams;
-    vector<FluorescenceParams> _fluorescenceParams;
-    vector<BoundBoundParams> _boundBoundParams;
+    // wavelength grid (shifted to the left of the actually sampled points to approximate rounding)
+    Array _lambdav;  // indexed on ell
+
+    // total extinction and scattering cross sections
+    Array _sigmaextv;  // indexed on ell
+    Array _sigmascav;  // indexed on ell
+
+    // emission parameters for each of the fluorescence transitions:
+    // if wavelength is nonzero, all photons are emitted at this wavelength;
+    // if wavelength is zero, sample wavelength from Lorentz shape defined by central energy and HWHM = FWHM / 2
+    vector<double> _lambdafluov;   // indexed on k
+    vector<double> _centralfluov;  // indexed on k
+    vector<double> _widthfluov;    // indexed on k
+
+    // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
+    //   - Rayleigh scattering by bound electrons for each atom
+    //   - Compton scattering by bound electrons for each atom
+    //   - fluorescence transitions
+    vector<double> _vthermscav;   // indexed on m
+    ArrayTable<2> _cumprobscavv;  // indexed on ell, m
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper

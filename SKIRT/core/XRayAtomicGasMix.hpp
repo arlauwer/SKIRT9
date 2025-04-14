@@ -446,7 +446,7 @@ public:
     class ScatteringHelper;
 
 private:
-    // all data members are precalculated in setupSelfAfter()
+    // all data members are precalculated in setupSelfBefore()
 
     // wavelength grid (shifted to the left of the actually sampled points to approximate rounding)
     Array _lambdav;  // indexed on ell

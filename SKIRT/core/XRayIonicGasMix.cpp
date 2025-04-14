@@ -97,7 +97,7 @@ namespace
 
     // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
     // without taking into account thermal dispersion
-    double crossSection(double E, const XRayIonicGasMix::PhotoAbsorbParams& p)
+    double crossSection(double E, const XRayIonicGasMix::PhotoAbsorbParam& p)
     {
         if (E < p.Eth || E >= p.Emax) return 0.;
 
@@ -112,7 +112,7 @@ namespace
     // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
     // approximating thermal dispersion by replacing the steep threshold transition by a sigmoid
     // error function with given parameters (dispersion and maximum value)
-    double crossSection(double E, double Es, double sigmamax, const XRayIonicGasMix::PhotoAbsorbParams& p)
+    double crossSection(double E, double Es, double sigmamax, const XRayIonicGasMix::PhotoAbsorbParam& p)
     {
         if (E <= p.Eth - 2. * Es) return 0.;
         if (E >= p.Eth + 2. * Es) return crossSection(E, p);
@@ -782,10 +782,17 @@ void XRayIonicGasMix::setupSelfBefore()
     MaterialMix::setupSelfBefore();
     auto config = find<Configuration>();
 
-    auto pap = loadStruct<PhotoAbsorbParams, 10>(this, "PA_data.txt", "photoabsorption data");
-    auto flp = loadStruct<FluorescenceParams, 7>(this, "FL_data.txt", "fluorescence data");
+    // ---- load resources ----
+
+    auto pap = loadStruct<PhotoAbsorbParam, 10>(this, "PA_data.txt", "photoabsorption data");
+    auto flp = loadStruct<FluorescenceParam, 7>(this, "FL_data.txt", "fluorescence data");
     // auto bbp = loadStruct<BoundBoundParams, 4>(this, "BB_data.txt", "bound-bound data");
-    auto bbp = vector<BoundBoundParams>();  // temp empty
+    auto bbp = vector<BoundBoundParam>();  // temp empty
+
+    vector<IonParam> ionParams;
+    vector<PhotoAbsorbParam> photoAbsorbParams;
+    vector<FluorescenceParam> fluorescenceParams;
+    vector<BoundBoundParam> boundBoundParams;
 
     // obtain ion names from the ions property
     string ionString = StringUtils::squeeze(ions());
@@ -807,15 +814,14 @@ void XRayIonicGasMix::setupSelfBefore()
         if (N < 1 || N > Z) throw FATALERROR("Invalid ion format: " + ion);
         double mass = masses[Z - 1];
         // add ion parameters
-        IonParams ionParams(Z, N, mass, ion);
-        _ionParams.push_back(ionParams);
+        ionParams.emplace_back(Z, N, mass, ion);
     }
 
-    _numIons = _ionParams.size();
+    int numIons = ionParams.size();
 
-    for (int i = 0; i < _numIons; i++)
+    for (int i = 0; i < numIons; i++)
     {
-        auto& ion = _ionParams[i];
+        auto& ion = ionParams[i];
 
         // add all PA this ion
         for (auto& pa : pap)
@@ -823,16 +829,16 @@ void XRayIonicGasMix::setupSelfBefore()
             if (pa.Z == ion.Z && pa.N == ion.N)
             {
                 pa.ionIndex = i;
-                _photoAbsorbParams.push_back(pa);
+                photoAbsorbParams.push_back(pa);
 
                 // add all FL for this PA
                 for (auto& fl : flp)
                 {
                     if (fl.Z == pa.Z && fl.N == pa.N && fl.n == pa.n && fl.l == pa.l)
                     {
-                        int p = _photoAbsorbParams.size() - 1;
+                        int p = photoAbsorbParams.size() - 1;
                         fl.papIndex = p;
-                        _fluorescenceParams.push_back(fl);
+                        fluorescenceParams.push_back(fl);
                     }
                 }
             }
@@ -844,13 +850,10 @@ void XRayIonicGasMix::setupSelfBefore()
             if (bb.Z == ion.Z && bb.N == ion.N)
             {
                 bb.ionIndex = i;
-                _boundBoundParams.push_back(bb);
+                boundBoundParams.push_back(bb);
             }
         }
     }
-
-    _numFl = _fluorescenceParams.size();
-    _numBB = _boundBoundParams.size();
 
     // create scattering helpers depending on the user-configured implementation type;
     // the respective helper constructors load the required bound-electron scattering resources
@@ -877,6 +880,42 @@ void XRayIonicGasMix::setupSelfBefore()
             _com = new BoundComptonHelper(this);
             break;
     }
+
+    // ---- thermal dispersion ----
+
+    // calculate the parameters for the sigmoid function approximating the convolution with a Gaussian
+    // at the threshold energy for each cross section record, and store the result into a temporary vector;
+    // the information includes the thermal energy dispersion at the threshold energy and
+    // the intrinsic cross section at the threshold energy plus twice this energy dispersion
+    vector<std::pair<double, double>> sigmoidv;
+    sigmoidv.reserve(photoAbsorbParams.size());
+    for (const auto& params : photoAbsorbParams)
+    {
+        double Es = params.Eth * vtherm(temperature(), atomv[params.Z - 1].mass) / Constants::c();
+        double sigmamax = crossSection(params.Eth + 2. * Es, params);
+        sigmoidv.emplace_back(Es, sigmamax);
+    }
+
+    // calculate and store the thermal velocities corresponding to the scattering channels
+    // (Rayleigh scattering for each atom, Compton scattering for each atom, fluorescence for each transition)
+    _vthermscav.reserve(2 * numAtoms + fluorescenceParams.size());
+    for (int i = 0; i != 2; ++i)
+        for (const auto& atom : atomv) _vthermscav.push_back(vtherm(temperature(), atom.mass));
+    for (const auto& params : fluorescenceParams)
+        _vthermscav.push_back(vtherm(temperature(), atomv[params.Z - 1].mass));
+}
+
+////////////////////////////////////////////////////////////////////
+
+XRayIonicGasMix::XRayIonicGasMix(SimulationItem* parent, string ions, BoundElectrons boundElectrons,
+                                 vector<double> abundances, double temperature)
+{
+    parent->addChild(this);
+    _ions = ions;
+    _scatterBoundElectrons = boundElectrons;
+    _abundances = abundances;
+    _temperature = temperature;
+    setup();
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -905,7 +944,7 @@ bool XRayIonicGasMix::hasPolarizedScattering() const
 
 bool XRayIonicGasMix::hasExtraSpecificState() const
 {
-    return true;
+    return false;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -924,70 +963,9 @@ bool XRayIonicGasMix::hasLineEmission() const
 
 ////////////////////////////////////////////////////////////////////
 
-vector<SnapshotParameter> XRayIonicGasMix::parameterInfo() const
-{
-    vector<SnapshotParameter> descriptors;
-
-    for (auto& ion : _ionParams)
-    {
-        descriptors.push_back(SnapshotParameter::custom(ion.name));
-    }
-
-    return descriptors;
-}
-
-////////////////////////////////////////////////////////////////////
-
 vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 {
-    vector<StateVariable> vars;
-    vars.push_back(StateVariable::numberDensity());
-    vars.push_back(StateVariable::temperature());
-
-    // ion abundances
-    for (int i = 0; i < _numIons; ++i)
-    {
-        auto& ion = _ionParams[i];
-        vars.push_back(StateVariable::custom(i, ion.name, "ionization fraction"));
-    }
-
-    // excited state populations
-    for (int i = 0; i < _numBB; ++i)
-    {
-        // actually only need unique excited levels, so not all transitions!
-        auto& bb = _boundBoundParams[i];
-        auto& ion = _ionParams[bb.ionIndex];
-        vars.push_back(StateVariable::custom(_numIons + i, ion.name, "excited state population"));
-    }
-
-    return vars;
-}
-
-////////////////////////////////////////////////////////////////////
-
-void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metallicity, double temperature,
-                                              const Array& params) const
-{
-    if (state->numberDensity() > 0.)
-    {
-        state->setTemperature(temperature >= 0. ? temperature : defaultTemperature);
-
-        if (params.size())
-        {
-            for (int i = 0; i < _numIons; ++i)
-            {
-                state->setCustom(i, params[i]);
-            }
-        }
-        else
-        {
-            // set ionization fractions to default values
-            for (int i = 0; i < _numIons; ++i)
-            {
-                state->setCustom(i, 1.);
-            }
-        }
-    }
+    return vector<StateVariable>{StateVariable::numberDensity(), StateVariable::temperature()};
 }
 
 ////////////////////////////////////////////////////////////////////
