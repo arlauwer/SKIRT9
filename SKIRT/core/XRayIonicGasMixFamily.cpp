@@ -7,6 +7,14 @@
 #include "Constants.hpp"
 #include "StringUtils.hpp"
 
+XRayIonicGasMixFamily::~XRayIonicGasMixFamily()
+{
+    for (XRayIonicGasMix* mix : _mixes)
+    {
+        delete mix;
+    }
+}
+
 void XRayIonicGasMixFamily::setupSelfBefore()
 {
     MaterialMixFamily::setupSelfBefore();
@@ -49,11 +57,24 @@ const MaterialMix* XRayIonicGasMixFamily::mix(const Array& parameters)
         case BoundElectrons::Exact: boundElectrons = XRayIonicGasMix::BoundElectrons::Exact; break;
     }
 
-    // use params to make new XRayIonicGasMix
-    vector<double> abundances;
-    double temperature;
+    
 
-    return new XRayIonicGasMix(this, _ions, boundElectrons, abundances, temperature);
+
+    // convert Array to vector
+    vector<double> abundances(begin(parameters), end(parameters));
+
+    // look for duplicates
+    for (const XRayIonicGasMix* mix : _mixes)
+    {
+        if (mix->abundances() == abundances) return mix;
+    }
+
+
+
+    auto mix = new XRayIonicGasMix(this, _ionNames, boundElectrons, abundances, temperature);
+    _mixes.push_back(mix)
+
+    return mix;
 }
 
 ////////////////////////////////////////////////////////////////////

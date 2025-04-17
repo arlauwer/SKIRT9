@@ -14,7 +14,7 @@
 
 ////////////////////////////////////////////////////////////////////
 
-class XRayIonicGasMix : public EmittingGasMix
+class XRayIonicGasMix : public MaterialMix
 {
     ENUM_DEF(BoundElectrons, None, Free, FreeWithPolarization, Good, Exact)
         ENUM_VAL(BoundElectrons, None, "ignore bound electrons")
@@ -30,6 +30,7 @@ class XRayIonicGasMix : public EmittingGasMix
 
         PROPERTY_STRING(ions, "the names of the ions for each element seperated by , (e.g. H1,He2,Fe1,Fe14,...)")
 
+        // can also use file here
         PROPERTY_DOUBLE_LIST(abundances, "the abundances of the ions in the same order as the ions property")
 
         PROPERTY_DOUBLE(temperature, "the temperature of the gas in K")
@@ -53,6 +54,14 @@ public:
     void setupSelfBefore() override;
 
     ~XRayIonicGasMix();
+
+    //======== Private support functions =======
+
+private:
+    /** This function returns the index in the private wavelength grid corresponding to the
+    specified wavelength. The parameters for converting a wavelength to the appropriate index
+    are stored in data members during setup. */
+    int indexForLambda(double lambda) const;
 
     //============= Capabilities =============
 
@@ -90,21 +99,20 @@ public:
 
     Array sigmaSca(double lambda, const MaterialState* state) const;
 
-    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda,
-                                   const MaterialState* state) const;
+    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda) const;
 
     void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;
 
     void performScattering(double lambda, const MaterialState* state, PhotonPacket* pp) const override;
 
-    //======== Secondary emission =======
+    //======== Temperature =======
 
-    Array lineEmissionCenters() const override;
-
-    Array lineEmissionMasses() const override;
-
-    Array lineEmissionSpectrum(const MaterialState* state, const Array& Jv) const override;
+public:
+    /** This function returns an indicative temperature of the material mix when it would be
+    embedded in a given radiation field. The implementation in this class ignores the radiation
+    field and returns the (spatially constant) temperature configured for this material mix. */
+    double indicativeTemperature(const MaterialState* state, const Array& Jv) const override;
 
     //======================== Data Members ========================
 
@@ -119,6 +127,7 @@ public:
         short Z;      // atomic number
         short N;      // number of electrons
         double mass;  // mass of the ion (amu)
+        double vth;   // thermal velocity of the ion (m/s)
         string name;  // name of the ion (eg. Fe1 for neutral iron)
     };
 
@@ -156,6 +165,18 @@ public:
         double yw;          // fit parameter (1)
         double y0 = 0.;     // fit parameter (1)
         double y1 = 0.;     // fit parameter (1)
+
+        double Es;
+        double sigmamax;
+
+        // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
+        // without taking into account thermal dispersion
+        double photoAbsorbSection(double E) const;
+
+        // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
+        // approximating thermal dispersion by replacing the steep threshold transition by a sigmoid
+        // error function with given parameters (dispersion and maximum value)
+        double photoAbsorbThermalSection(double E) const;
     };
 
     struct BoundBoundParam
@@ -171,11 +192,11 @@ public:
     };
 
 private:
-    // int _numIons;  // total number of ions
+    int _numIons;  // total number of ions
     // // int _numPa;    // number of photo-absorption transitions
     // int _numFl;  // number of fluorescence transitions
     // int _numBB;  // number of bound-bound transitions
-    // vector<IonParams> _ionParams;
+    vector<IonParam> _ionParams;
     // vector<PhotoAbsorbParams> _photoAbsorbParams;
     // vector<FluorescenceParams> _fluorescenceParams;
     // vector<BoundBoundParams> _boundBoundParams;
