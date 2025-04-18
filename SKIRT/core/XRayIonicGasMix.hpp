@@ -43,11 +43,6 @@ class XRayIonicGasMix : public MaterialMix
     //============= Construction - Setup - Destruction =============
 
 public:
-    /** This constructor can be invoked programmatically by classes that use a hard-coded SED
-        family (as opposed to selected through the ski file). Before the constructor returns, the
-        newly created object is hooked up as a child to the specified parent in the simulation
-        hierarchy (so it will automatically be deleted), and its setup() function has been called.
-        */
     explicit XRayIonicGasMix(SimulationItem* parent, string ions, BoundElectrons boundElectrons,
                              vector<double> abundances, double temperature);
 

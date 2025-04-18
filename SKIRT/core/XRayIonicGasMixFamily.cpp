@@ -43,7 +43,7 @@ vector<SnapshotParameter> XRayIonicGasMixFamily::parameterInfo() const
 
 ////////////////////////////////////////////////////////////////////
 
-const MaterialMix* XRayIonicGasMixFamily::mix(const Array& parameters)
+const MaterialMix* XRayIonicGasMixFamily::mix(double /*Z*/, double T, const Array& parameters)
 {
     XRayIonicGasMix::BoundElectrons boundElectrons;
     switch (_scatterBoundElectrons)
@@ -57,9 +57,6 @@ const MaterialMix* XRayIonicGasMixFamily::mix(const Array& parameters)
         case BoundElectrons::Exact: boundElectrons = XRayIonicGasMix::BoundElectrons::Exact; break;
     }
 
-    
-
-
     // convert Array to vector
     vector<double> abundances(begin(parameters), end(parameters));
 
@@ -69,10 +66,8 @@ const MaterialMix* XRayIonicGasMixFamily::mix(const Array& parameters)
         if (mix->abundances() == abundances) return mix;
     }
 
-
-
-    auto mix = new XRayIonicGasMix(this, _ionNames, boundElectrons, abundances, temperature);
-    _mixes.push_back(mix)
+    XRayIonicGasMix* mix = new XRayIonicGasMix(this, _ions, boundElectrons, abundances, T);
+    _mixes.push_back(mix);
 
     return mix;
 }

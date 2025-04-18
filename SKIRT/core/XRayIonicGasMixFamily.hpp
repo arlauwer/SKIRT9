@@ -50,7 +50,7 @@ public:
 public:
     vector<SnapshotParameter> parameterInfo() const override;
 
-    const MaterialMix* mix(const Array& parameters) override;
+    const MaterialMix* mix(double Z, double T, const Array& parameters) override;
 
     //======================== Data Members ========================
 private:
