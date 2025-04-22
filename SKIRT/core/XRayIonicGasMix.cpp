@@ -902,8 +902,14 @@ void XRayIonicGasMix::setupSelfBefore()
 
     // calculate and store the thermal velocities corresponding to the scattering channels
     // (Rayleigh scattering for each atom, Compton scattering for each atom, fluorescence for each transition)
-    _vthermscav.reserve(_numIons);
-    for (auto& ion : _ionParams) _vthermscav.push_back(vtherm(temperature(), ion.mass));
+    _vthermscav.reserve(_numIons + numFluo);
+    for (const auto& ion : _ionParams) _vthermscav.push_back(vtherm(temperature(), ion.mass));
+    for (const auto& flp : fluorescenceParams)
+    {
+        const auto& pap = photoAbsorbParams[flp.papIndex];
+        const auto& ion = _ionParams[pap.ionIndex];
+        _vthermscav.push_back(vtherm(temperature(), ion.mass));
+    }
 
     // ---- wavelength grid ----
 
@@ -1061,14 +1067,17 @@ void XRayIonicGasMix::setupSelfBefore()
 ////////////////////////////////////////////////////////////////////
 
 XRayIonicGasMix::XRayIonicGasMix(SimulationItem* parent, string ions, BoundElectrons boundElectrons,
-                                 vector<double> abundances, double temperature)
+                                 vector<double> abundances, double temperature, bool setup)
 {
-    parent->addChild(this);
     _ions = ions;
     _scatterBoundElectrons = boundElectrons;
     _abundances = abundances;
     _temperature = temperature;
-    setup();
+    if (setup)
+    {
+        parent->addChild(this);
+        this->setup();
+    }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1189,11 +1198,13 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
     {
         scatinfo->valid = true;
         scatinfo->species = NR::locateClip(_cumprobscavv[indexForLambda(lambda)], random()->uniform());
-        if (temperature() > 0.) scatinfo->velocity = _vthermscav[scatinfo->species] * random()->maxwell();
 
         // for a fluorescence transition, determine the outgoing wavelength from the corresponding parameters
         if (scatinfo->species >= static_cast<int>(2 * _numIons))
         {
+            if (temperature() > 0.)
+                scatinfo->velocity = _vthermscav[scatinfo->species - _numIons] * random()->maxwell();
+
             int i = scatinfo->species - 2 * _numIons;
             if (_lambdafluov[i])
             {
@@ -1207,10 +1218,14 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
                 // therefore we loop until the sampled wavelength is meaningful
                 while (true)
                 {
+                    // fix this!! use a biasing technique here?
                     scatinfo->lambda = wavelengthToFromEnergy(_centralfluov[i] + _widthfluov[i] * random()->lorentz());
-                    if (nonZeroRange.contains(scatinfo->lambda)) break;
                 }
             }
+        }
+        else
+        {
+            scatinfo->velocity = _vthermscav[scatinfo->species % _numIons] * random()->maxwell();
         }
     }
 }

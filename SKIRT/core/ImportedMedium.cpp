@@ -99,10 +99,7 @@ const MaterialMix* ImportedMedium::mix() const
 {
     if (_importVariableMixParams)
     {
-        Array params(_materialMixFamily->parameterInfo().size());
-        double Z = _importMetallicity ? _snapshot->metallicity(0) : -1.;
-        double T = _importTemperature ? _snapshot->temperature(0) : -1.;
-        return _materialMixFamily->mix(Z, T, params);
+        return _materialMixFamily->mix();
     }
     else
         return _materialMix;

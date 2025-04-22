@@ -66,10 +66,23 @@ const MaterialMix* XRayIonicGasMixFamily::mix(double /*Z*/, double T, const Arra
         if (mix->abundances() == abundances) return mix;
     }
 
-    XRayIonicGasMix* mix = new XRayIonicGasMix(this, _ions, boundElectrons, abundances, T);
+    XRayIonicGasMix* mix = new XRayIonicGasMix(this, _ions, boundElectrons, abundances, T, true);
     _mixes.push_back(mix);
 
     return mix;
 }
 
 ////////////////////////////////////////////////////////////////////
+
+const MaterialMix* XRayIonicGasMixFamily::mix()
+{
+    if (_mixes.size() > 0) return _mixes[0];
+
+    // create a default mix for the Configuration (might remove later)
+    if (!_defaultMix)
+    {
+        _defaultMix = new XRayIonicGasMix(this, _ions, XRayIonicGasMix::BoundElectrons::None,
+                                          vector<double>(_ionNames.size(), 0.), 0., false);
+    }
+    return _defaultMix;
+}

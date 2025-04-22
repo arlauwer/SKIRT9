@@ -44,7 +44,7 @@ class XRayIonicGasMix : public MaterialMix
 
 public:
     explicit XRayIonicGasMix(SimulationItem* parent, string ions, BoundElectrons boundElectrons,
-                             vector<double> abundances, double temperature);
+                             vector<double> abundances, double temperature, bool setup);
 
     void setupSelfBefore() override;
 
@@ -188,36 +188,30 @@ public:
 
 private:
     int _numIons;  // total number of ions
-    // // int _numPa;    // number of photo-absorption transitions
-    // int _numFl;  // number of fluorescence transitions
-    // int _numBB;  // number of bound-bound transitions
     vector<IonParam> _ionParams;
-    // vector<PhotoAbsorbParams> _photoAbsorbParams;
-    // vector<FluorescenceParams> _fluorescenceParams;
-    // vector<BoundBoundParams> _boundBoundParams;
 
     // all data members are precalculated in setupSelfAfter()
 
     // wavelength grid (shifted to the left of the actually sampled points to approximate rounding)
-    Array _lambdav;  // indexed on ell
+    Array _lambdav;  // indexed on wav
 
     // total extinction and scattering cross sections
-    Array _sigmaextv;  // indexed on ell
-    Array _sigmascav;  // indexed on ell
+    Array _sigmaextv;  // indexed on wav
+    Array _sigmascav;  // indexed on wav
 
     // emission parameters for each of the fluorescence transitions:
     // if wavelength is nonzero, all photons are emitted at this wavelength;
     // if wavelength is zero, sample wavelength from Lorentz shape defined by central energy and HWHM = FWHM / 2
-    vector<double> _lambdafluov;   // indexed on k
-    vector<double> _centralfluov;  // indexed on k
-    vector<double> _widthfluov;    // indexed on k
+    vector<double> _lambdafluov;   // indexed on fluo
+    vector<double> _centralfluov;  // indexed on fluo
+    vector<double> _widthfluov;    // indexed on fluo
 
     // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
     //   - Rayleigh scattering by bound electrons for each atom
     //   - Compton scattering by bound electrons for each atom
     //   - fluorescence transitions
-    vector<double> _vthermscav;   // indexed on m
-    ArrayTable<2> _cumprobscavv;  // indexed on ell, m
+    vector<double> _vthermscav;   // indexed on ion + fluo
+    ArrayTable<2> _cumprobscavv;  // indexed on wav, 2*ion + fluo
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper

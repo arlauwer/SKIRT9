@@ -52,10 +52,13 @@ public:
 
     const MaterialMix* mix(double Z, double T, const Array& parameters) override;
 
+    const MaterialMix* mix() override;
+
     //======================== Data Members ========================
 private:
     vector<string> _ionNames;
     vector<XRayIonicGasMix*> _mixes;
+    XRayIonicGasMix* _defaultMix;
 };
 
 ////////////////////////////////////////////////////////////////////
