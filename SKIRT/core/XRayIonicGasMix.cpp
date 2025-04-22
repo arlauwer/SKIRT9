@@ -1220,6 +1220,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
                 {
                     // fix this!! use a biasing technique here?
                     scatinfo->lambda = wavelengthToFromEnergy(_centralfluov[i] + _widthfluov[i] * random()->lorentz());
+                    if (nonZeroRange.contains(scatinfo->lambda)) break;
                 }
             }
         }
