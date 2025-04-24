@@ -85,8 +85,8 @@ const MaterialMix* ImportedMedium::mix(Position bfr) const
     {
         Array params;
         _snapshot->parameters(bfr, params);
-        double Z = _importMetallicity ? _snapshot->metallicity(bfr) : -1.;
-        double T = _importTemperature ? _snapshot->temperature(bfr) : -1.;
+        double Z = _importMetallicity ? _snapshot->metallicity(bfr) : 0.;
+        double T = _importTemperature ? _snapshot->temperature(bfr) : 0.;
         return _materialMixFamily->mix(Z, T, params);
     }
     else
