@@ -1106,7 +1106,7 @@ MaterialMix::MaterialType XRayIonicGasMix::materialType() const
 
 bool XRayIonicGasMix::hasPolarizedScattering() const
 {
-    return false;
+    return scatterBoundElectrons() == BoundElectrons::FreeWithPolarization;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1120,7 +1120,7 @@ bool XRayIonicGasMix::hasExtraSpecificState() const
 
 bool XRayIonicGasMix::hasScatteringDispersion() const
 {
-    return false;
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////

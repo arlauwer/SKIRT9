@@ -30,10 +30,14 @@ class XRayIonicGasMix : public MaterialMix
 
         PROPERTY_STRING(ions, "the names of the ions for each element seperated by , (e.g. H1,He2,Fe1,Fe14,...)")
 
-        // can also use file here
         PROPERTY_DOUBLE_LIST(abundances, "the abundances of the ions in the same order as the ions property")
 
         PROPERTY_DOUBLE(temperature, "the temperature of the gas in K")
+        ATTRIBUTE_QUANTITY(temperature, "temperature")
+        ATTRIBUTE_MIN_VALUE(temperature, "[0")
+        ATTRIBUTE_MAX_VALUE(temperature, "1e9]")
+        ATTRIBUTE_DEFAULT_VALUE(temperature, "1e4")
+        ATTRIBUTE_DISPLAYED_IF(temperature, "Level2")
 
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
