@@ -58,7 +58,7 @@ public:
 private:
     vector<string> _ionNames;
     vector<XRayIonicGasMix*> _mixes;
-    XRayIonicGasMix* _defaultMix;
+    XRayIonicGasMix* _defaultMix{nullptr};
 };
 
 ////////////////////////////////////////////////////////////////////
