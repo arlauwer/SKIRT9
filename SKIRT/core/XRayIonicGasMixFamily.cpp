@@ -25,6 +25,10 @@ void XRayIonicGasMixFamily::setupSelfBefore()
         ion = StringUtils::squeeze(ion);
         _ionNames.push_back(ion);
     }
+
+    // somehow read level populations here?
+    // XRayIonicGasMix uses a string to read level populations as a file, but we should avoid that when using the Family.
+    // so how do we build the GasMix from this Family explicitly without using a file?
 }
 
 ////////////////////////////////////////////////////////////////////
