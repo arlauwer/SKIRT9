@@ -8,6 +8,22 @@
 
 ////////////////////////////////////////////////////////////////////
 
+ListWavelengthGrid::ListWavelengthGrid(SimulationItem* parent, const vector<double>& wavelengths,
+                                       double relativeHalfWidth, bool log, bool setup)
+{
+    _wavelengths = wavelengths;
+    _relativeHalfWidth = relativeHalfWidth;
+    _log = log;
+
+    if (setup)
+    {
+        parent->addChild(this);
+        this->setup();
+    }
+}
+
+////////////////////////////////////////////////////////////////////
+
 void ListWavelengthGrid::setupSelfBefore()
 {
     DisjointWavelengthGrid::setupSelfBefore();

@@ -33,14 +33,8 @@ class XRayIonicGasMix : public EmittingGasMix
 
         PROPERTY_DOUBLE_LIST(abundances, "the abundances of the ions in the same order as the ions property")
 
-        PROPERTY_BOOL(levelPopulations, "True if the level populations are used")
-        ATTRIBUTE_DEFAULT_VALUE(levelPopulations, "false")
-
-        PROPERTY_STRING(levelPopulationsFilename,
-                        "the file containing the level populations of the bound-bound levels in the "
-                        "same order as bound-bound levels")
-        ATTRIBUTE_RELEVANT_IF(levelPopulationsFilename, "levelPopulations")
-        ATTRIBUTE_REQUIRED_IF(levelPopulationsFilename, "levelPopulations")
+        PROPERTY_STRING(opticalPropertiesFile, "the name of the file with the optical properties")
+        ATTRIBUTE_REQUIRED_IF(opticalPropertiesFile, "True")
 
         PROPERTY_DOUBLE(temperature, "the temperature of the gas in K")
         ATTRIBUTE_QUANTITY(temperature, "temperature")
@@ -67,10 +61,8 @@ public:
     //======== Private support functions =======
 
 private:
-    /** This function returns the index in the private wavelength grid corresponding to the
-    specified wavelength. The parameters for converting a wavelength to the appropriate index
-    are stored in data members during setup. */
-    int indexForLambda(double lambda) const;
+    double interpolateSigma(double lambda, const Array& sigma) const;
+
 
     // return thermal velocity for given gas temperature (in K) and particle mass (in amu)
     double vtherm(double amu) const;
@@ -84,6 +76,8 @@ private:
     bool hasExtraSpecificState() const override;
 
     bool hasScatteringDispersion() const override;
+
+    bool hasContinuumEmission() const override;
 
     bool hasLineEmission() const override;
 
@@ -118,18 +112,20 @@ private:
 
     void performScattering(double lambda, const MaterialState* state, PhotonPacket* pp) const override;
 
-    //======== Secondary emission =======
+    //======== Secondary continuum emission =======
 
-    /** This function returns a list with the line centers of the supported transitions. */
+public:
+    DisjointWavelengthGrid* emissionWavelengthGrid() const override;
+
+    Array emissionSpectrum(const MaterialState* state, const Array& Jv) const override;
+
+    //======== Secondary line emission =======
+
+public:
     Array lineEmissionCenters() const override;
 
-    /** This function returns a list with the masses of the particles emitting each of the lines,
-        i.e. the mass of a molecule or atom of the species under consideration in each case. */
     Array lineEmissionMasses() const override;
 
-    /** This function returns a list with the line luminosities for the supported transitions in
-        the spatial cell and medium component represented by the specified material state and the
-        receiving material mix when it would be embedded in the specified radiation field. */
     Array lineEmissionSpectrum(const MaterialState* state, const Array& Jv) const override;
 
     //======== Temperature =======
@@ -156,63 +152,33 @@ public:
         double abund;  // abundance of the ion relative to the total number density
     };
 
-    struct Fluorescence
-    {
-        double E;  // (central) energy of the emitted photon (eV)
-        double W;  // FWHM of the Lorentz shape for the emitted photon (eV), or zero
-
-        short ionIndex;  // index of the ion
-    };
-
-    struct BoundTransition
-    {
-        short upperIndex;  // index of the upper energy level
-        short lowerIndex;  // index of the lower energy level
-        double lam;        // wavelength of the transition (m)
-        double A;          // Einstein A coefficient (s^-1)
-        double gul;        // gu/gl
-
-        short ionIndex;  // index of the ion
-    };
-
-    struct BoundLevel
-    {
-        double pop;  // level population relative to parent ion
-    };
-
 private:
     // all the parameters we want to store, even after the setup
     int _numIons;       // total number of ions (i.e. abundances.size())
     vector<Ion> _ions;  // indexed on ions
 
-    int _numFluo;                        // total number of fluorescence parameters
-    vector<Fluorescence> _fluorescence;  // indexed on photo-absorption parameters
-
-    int _numBLevels;                            // total number of bound-bound levels
-    vector<BoundLevel> _boundLevels;            // indexed on bound-bound levels
-    int _numBTransitions;                       // total number of bound-bound transitions
-    vector<BoundTransition> _boundTransitions;  // indexed on bound-bound transitions
-
-    // all data members are precalculated in setupSelfAfter()
-
-    // wavelength grid (shifted to the left of the actually sampled points to approximate rounding)
-    Array _lambdav;  // indexed on wav
-
-    // total extinction and scattering cross sections
-    Array _sigmaextv;  // indexed on wav
-    Array _sigmascav;  // indexed on wav
-
+    // continuum opacity //
+    int _numC;
+    Array _lambdaC;
+    Array _sigmaabsC;  // indexed on continuum
+    Array _sigmascaCO;  // indexed on continuum
     // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
     //   - Rayleigh scattering by bound electrons for each atom
     //   - Compton scattering by bound electrons for each atom
-    //   - fluorescence transitions
-    ArrayTable<2> _cumprobscavv;  // indexed on wav, 2*ion + fluo
+    ArrayTable<2> _cumprobscaCO;  // indexed on continuum, 2*ion
+
+    // continuum emissivity
+    DisjointWavelengthGrid* _wavgridCE{nullptr};  // wavelength grid for emission
+    Array _emissivityC;                          // indexed on continuum
+
+    // lines //
+    Array _lambdaL;
+    Array _massL;
+    Array _lumL;
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
-
-    TextInFile* _levelPopulationsFile{nullptr};  // file with the level populations of the bound-bound levels
 };
 
 #endif

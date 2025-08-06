@@ -51,6 +51,10 @@ class ListWavelengthGrid : public DisjointWavelengthGrid
 
     //============= Construction - Setup - Destruction =============
 
+public:
+    explicit ListWavelengthGrid(SimulationItem* parent, const vector<double>& wavelengths, double relativeHalfWidth,
+                                bool log, bool setup);
+
 protected:
     /** This function sets the wavelength grid to the characteristic wavelengths specified by the
         \em wavelengths property. */
