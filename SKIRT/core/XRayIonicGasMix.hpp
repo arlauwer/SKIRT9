@@ -29,20 +29,6 @@ class XRayIonicGasMix : public EmittingGasMix
     ITEM_CONCRETE(XRayIonicGasMix, EmittingGasMix, "Ionised gas mix")
         ATTRIBUTE_TYPE_INSERT(XRayIonicGasMix, "GasMix,CustomMediumState")
 
-        PROPERTY_STRING(ionNames, "the names of the ions for each element seperated by , (e.g. H1,He2,Fe1,Fe14,...)")
-
-        PROPERTY_DOUBLE_LIST(abundances, "the abundances of the ions in the same order as the ions property")
-
-        PROPERTY_STRING(opticalPropertiesFile, "the name of the file with the optical properties")
-        ATTRIBUTE_REQUIRED_IF(opticalPropertiesFile, "True")
-
-        PROPERTY_DOUBLE(temperature, "the temperature of the gas in K")
-        ATTRIBUTE_QUANTITY(temperature, "temperature")
-        ATTRIBUTE_MIN_VALUE(temperature, "[0")
-        ATTRIBUTE_MAX_VALUE(temperature, "1e9]")
-        ATTRIBUTE_DEFAULT_VALUE(temperature, "1e4")
-        ATTRIBUTE_DISPLAYED_IF(temperature, "Level2")
-
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
         ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level3")
@@ -51,9 +37,6 @@ class XRayIonicGasMix : public EmittingGasMix
     //============= Construction - Setup - Destruction =============
 
 public:
-    explicit XRayIonicGasMix(SimulationItem* parent, string ions, BoundElectrons boundElectrons,
-                             vector<double> abundances, double temperature, bool setup);
-
     void setupSelfBefore() override;
 
     ~XRayIonicGasMix();
@@ -61,11 +44,10 @@ public:
     //======== Private support functions =======
 
 private:
-    double interpolateSigma(double lambda, const Array& sigma) const;
-
-
     // return thermal velocity for given gas temperature (in K) and particle mass (in amu)
-    double vtherm(double amu) const;
+    double vtherm(double T, double amu) const;
+
+    int indexForLambda(double lambda) const;
 
     //============= Capabilities =============
 
@@ -81,9 +63,20 @@ private:
 
     bool hasLineEmission() const override;
 
-    //============= Medium state setup =============
+    //======== Medium state setup =======
 
+public:
     vector<StateVariable> specificStateVariableInfo() const override;
+
+    void initializeSpecificState(MaterialState* state, double metallicity, double temperature,
+                                 const Array& params) const override;
+
+    //======== Medium state updates =======
+
+    UpdateStatus updateSpecificState(MaterialState* state, const Array& Jv) const override;
+
+    bool isSpecificStateConverged(int numCells, int numUpdated, int numNotConverged, MaterialState* currentAggregate,
+                                  MaterialState* previousAggregate) const override;
 
     //============= Low-level material properties =============
 
@@ -103,9 +96,7 @@ private:
 
     double opacityExt(double lambda, const MaterialState* state, const PhotonPacket* pp) const override;
 
-    Array sigmaSca(double lambda, const MaterialState* state) const;
-
-    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda) const;
+    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda, const MaterialState* state) const;
 
     void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;
@@ -142,43 +133,44 @@ public:
     // base class for bound-electron scattering helpers (public because we derive from it in anonymous namespace)
     class ScatteringHelper;
 
-    struct Ion
-    {
-        short Z;  // atomic number
-        short N;  // number of electrons
-
-        double mass;   // mass of the ion (amu)
-        double vth;    // thermal velocity of the ion (m/s)
-        double abund;  // abundance of the ion relative to the total number density
-    };
-
 private:
-    // all the parameters we want to store, even after the setup
-    int _numIons;       // total number of ions (i.e. abundances.size())
-    vector<Ion> _ions;  // indexed on ions
+    int _indexThermalVelocity;  // index of the thermal velocity in the custom state variables
+    int _indexAbundances;       // index of the abundances in the custom state variables
 
-    // continuum opacity //
+    // continuum wavelengths //
     int _numC;
     Array _lambdaC;
-    Array _sigmaabsC;  // indexed on continuum
-    Array _sigmascaCO;  // indexed on continuum
+    DisjointWavelengthGrid* _wavgridCE{nullptr};  // grid for emission
+
+    // continuum opacity //
+    int _indexSigmaAbs;
+    int _indexSigmaSca;  // indices of the absorption and scattering cross sections in the custom state variables
     // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
     //   - Rayleigh scattering by bound electrons for each atom
     //   - Compton scattering by bound electrons for each atom
-    ArrayTable<2> _cumprobscaCO;  // indexed on continuum, 2*ion
+    int _indexSigmaScaCum;  // index of the cumulative probability distribution in the custom state variables
 
-    // continuum emissivity
-    DisjointWavelengthGrid* _wavgridCE{nullptr};  // wavelength grid for emission
-    Array _emissivityC;                          // indexed on continuum
+    // continuum emissivity //
+    int _indexEmissivity;  // index of the emissivity in the custom state variables
 
     // lines //
-    Array _lambdaL;
-    Array _massL;
-    Array _lumL;
+    // Array _lambdaL;
+    // Array _massL;
+    // Array _lumL;
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
+
+    // Axes: ions (1), intensity(W/m2/m), density(1/m3), metallicity(1)
+    StoredTable<4> _abundanceTable;  // abundances (1/m3)
+
+    // Axes: atoms (1), intensity(W/m2/m), density(1/m3), metallicity(1)
+    StoredTable<4> _temperatureTable;  // temperature (K)
+
+    // Axes: wavelength(m), intensity(W/m2/m), density(1/m3), metallicity(1)
+    StoredTable<4> _absorptionTable;  // absorption cross section (m2)
+    StoredTable<4> _emissivityTable;  // emissivity (W/m3)
 };
 
 #endif
