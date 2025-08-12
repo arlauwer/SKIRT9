@@ -11,6 +11,7 @@
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
 #include "SnapshotParameter.hpp"
+#include "StoredTable.hpp"
 #include "TextInFile.hpp"
 
 ////////////////////////////////////////////////////////////////////
@@ -44,9 +45,6 @@ public:
     //======== Private support functions =======
 
 private:
-    // return thermal velocity for given gas temperature (in K) and particle mass (in amu)
-    double vtherm(double T, double amu) const;
-
     int indexForLambda(double lambda) const;
 
     //============= Capabilities =============
@@ -96,7 +94,8 @@ public:
 
     double opacityExt(double lambda, const MaterialState* state, const PhotonPacket* pp) const override;
 
-    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda, const MaterialState* state) const;
+    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda,
+                                   const MaterialState* state) const;
 
     void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;
@@ -113,11 +112,11 @@ public:
     //======== Secondary line emission =======
 
 public:
-    Array lineEmissionCenters() const override;
+    // Array lineEmissionCenters() const override;
 
-    Array lineEmissionMasses() const override;
+    // Array lineEmissionMasses() const override;
 
-    Array lineEmissionSpectrum(const MaterialState* state, const Array& Jv) const override;
+    // Array lineEmissionSpectrum(const MaterialState* state, const Array& Jv) const override;
 
     //======== Temperature =======
 
@@ -134,29 +133,26 @@ public:
     class ScatteringHelper;
 
 private:
-    int _indexThermalVelocity;  // index of the thermal velocity in the custom state variables
+    Range _range;
+
+    // MaterialState indices: size //
+    // Abundances:      numIons
+    // VTherm:          numAtoms
+    // SigmaAbs:        numLambda
+    // SigmaSca:        numLambda
+    // SigmaScaCum:     numLambda x 2*numIons+1 (+1 for cumulative)
+    // Emissivity:      numLambda + 2
     int _indexAbundances;       // index of the abundances in the custom state variables
+    int _indexThermalVelocity;  // index of the thermal velocity in the custom state variables
+    int _indexSigmaAbs;         // index of the absorption cross section in the custom state variables
+    int _indexSigmaSca;         // index of the absorption and scattering cross sections in the custom state variables
+    int _indexSigmaScaCum;      // index of the cumulative scattering cross section for Rayleigh and Compton scattering
+    int _indexEmissivity;       // index of the emissivity in the custom state variables
 
-    // continuum wavelengths //
-    int _numC;
-    Array _lambdaC;
-    DisjointWavelengthGrid* _wavgridCE{nullptr};  // grid for emission
-
-    // continuum opacity //
-    int _indexSigmaAbs;
-    int _indexSigmaSca;  // indices of the absorption and scattering cross sections in the custom state variables
-    // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
-    //   - Rayleigh scattering by bound electrons for each atom
-    //   - Compton scattering by bound electrons for each atom
-    int _indexSigmaScaCum;  // index of the cumulative probability distribution in the custom state variables
-
-    // continuum emissivity //
-    int _indexEmissivity;  // index of the emissivity in the custom state variables
-
-    // lines //
-    // Array _lambdaL;
-    // Array _massL;
-    // Array _lumL;
+    // shared variables //
+    int _numLambda;
+    Array _lambda;
+    DisjointWavelengthGrid* _emissionGrid{nullptr};  // grid for emission
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
@@ -165,8 +161,8 @@ private:
     // Axes: ions (1), intensity(W/m2/m), density(1/m3), metallicity(1)
     StoredTable<4> _abundanceTable;  // abundances (1/m3)
 
-    // Axes: atoms (1), intensity(W/m2/m), density(1/m3), metallicity(1)
-    StoredTable<4> _temperatureTable;  // temperature (K)
+    // Axes: intensity(W/m2/m), density(1/m3), metallicity(1)
+    StoredTable<3> _temperatureTable;  // temperature (K)
 
     // Axes: wavelength(m), intensity(W/m2/m), density(1/m3), metallicity(1)
     StoredTable<4> _absorptionTable;  // absorption cross section (m2)

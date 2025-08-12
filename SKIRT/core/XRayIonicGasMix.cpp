@@ -14,10 +14,7 @@
 #include "NR.hpp"
 #include "Random.hpp"
 #include "Range.hpp"
-#include "SnapshotParameter.hpp"
-#include "StoredTable.hpp"
 #include "StringUtils.hpp"
-#include "TextInFile.hpp"
 #include <map>
 #include <regex>
 
@@ -31,8 +28,6 @@ namespace
     static constexpr double defaultMetallicity = 0.;
 
     static constexpr int numAtoms = 30;  // H to Zn
-    static constexpr int numIons = 465;  // H to Zn all ions
-
     // masses of the elements in amu up to Z=30
     const vector<double> atomicMasses = {1.0079,  4.0026, 6.941,   9.01218, 10.81,   12.011,  14.0067, 15.9994,
                                          18.9984, 20.179, 22.9898, 24.305,  26.9815, 28.0855, 30.9738, 32.06,
@@ -63,8 +58,11 @@ namespace
     }
 
     // organized way to order the ions by Z and N
+
     static const vector<Ion> ions = initIons();  // indexed on ions
     static const int numIons = ions.size();      // total number of ions (i.e. abundances.size())
+    // WIP THE NUMIONS WILL PROBABLY HAVE TO BE CHANGED? IF THE ENTIRE CLOUDY TABLE DOESN'T HAVE EG. Zn+24
+    // THEN JUST DON'T STORE IT AND numIons < 465
 
     double vtherm(double T, double amu)
     {
@@ -809,38 +807,38 @@ void XRayIonicGasMix::setupSelfBefore()
     }
 
     // lambda wavelength grid
-    Range range = config()->simulationWavelengthRange();
-    range.intersect(nonZeroRange);
+    _range = config()->simulationWavelengthRange();
+    _range.intersect(nonZeroRange);
 
     // obtain the wavelengths from the absorption table
-    _absorptionTable.axisArray<0, double>(_lambdaC);
-    _numC = _lambdaC.size();
+    _absorptionTable.axisArray<0, double>(_lambda);
+    _numLambda = _lambda.size();
 
-    if (_lambdaC[0] > _lambdaC[_numC - 1])
+    if (_lambda[0] > _lambda[_numLambda - 1])
     {
         throw FATALERROR("The tabulated wavelength grid must be ascending");
     }
 
     // Mask the arrays to keep only values within the range
-    auto first = std::lower_bound(std::begin(_lambdaC), std::end(_lambdaC), range.min());
-    auto last = std::upper_bound(std::begin(_lambdaC), std::end(_lambdaC), range.max());
-    size_t start = std::distance(std::begin(_lambdaC), first);
+    auto first = std::lower_bound(std::begin(_lambda), std::end(_lambda), _range.min());
+    auto last = std::upper_bound(std::begin(_lambda), std::end(_lambda), _range.max());
+    size_t start = std::distance(std::begin(_lambda), first);
     size_t count = std::distance(first, last);
 
-    _lambdaC = _lambdaC[std::slice(start, count, 1)];
-    _numC = _lambdaC.size();
+    _lambda = _lambda[std::slice(start, count, 1)];
+    _numLambda = _lambda.size();
 
     // ---- continuum emissivity ---- //
-    vector<double> lambdaCv(std::begin(_lambdaC), std::end(_lambdaC));
-    if (!_wavgridCE) _wavgridCE = new ListWavelengthGrid(this, lambdaCv, 0., true, true);
+    vector<double> lambdaCv(std::begin(_lambda), std::end(_lambda));
+    if (!_emissionGrid) _emissionGrid = new ListWavelengthGrid(this, lambdaCv, 0., true, true);
 
     ////// DO THIS LATER SOMEWHERE!!!
-    // add 2 outer points to match the _wavgridCE
+    // add 2 outer points to match the _emissionGrid
     // Array temp = _emissivityC;
-    // _emissivityC.resize(_numC + 2);
+    // _emissivityC.resize(_numLambda + 2);
     // _emissivityC[0] = 0.;
-    // _emissivityC[std::slice(1, _numC, 1)] = temp;
-    // _emissivityC[_numC + 1] = 0.;
+    // _emissivityC[std::slice(1, _numLambda, 1)] = temp;
+    // _emissivityC[_numLambda + 1] = 0.;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -849,21 +847,14 @@ XRayIonicGasMix::~XRayIonicGasMix()
 {
     delete _ray;
     delete _com;
-    delete _wavgridCE;
-}
-
-////////////////////////////////////////////////////////////////////
-
-double XRayIonicGasMix::vtherm(double T, double amu) const
-{
-    return sqrt(Constants::k() / Constants::amu() * T / amu);
+    delete _emissionGrid;
 }
 
 ////////////////////////////////////////////////////////////////////
 
 int XRayIonicGasMix::indexForLambda(double lambda) const
 {
-    return NR::locateClip(_lambdaC, lambda);
+    return NR::locateClip(_lambda, lambda);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -920,10 +911,10 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     // State variables
     // abundances:      numIons
     // vtherm:          numAtoms
-    // sigmaabsC:       numC
-    // sigmascaC:       numC
-    // cumprobscaC:     numC x 2*numIons+1 (+1 for cumulative)
-    // emissivityC:     numC + 2
+    // sigmaabsC:       numLambda
+    // sigmascaC:       numLambda
+    // cumprobscaC:     numLambda x 2*numIons+1 (+1 for cumulative)
+    // emissivityC:     numLambda + 2
     // LINES WIP
 
     const_cast<XRayIonicGasMix*>(this)->_indexAbundances = index;
@@ -935,20 +926,20 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexSigmaAbs = index;
-    for (int l = 0; l < _numC; l++)
+    for (int l = 0; l < _numLambda; l++)
         result.push_back(StateVariable::custom(index++, "absorption cross section", "area"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexSigmaSca = index;
-    for (int l = 0; l < _numC; l++)
+    for (int l = 0; l < _numLambda; l++)
         result.push_back(StateVariable::custom(index++, "scattering cross section", "area"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexSigmaScaCum = index;
-    for (int l = 0; l < _numC; l++)
+    for (int l = 0; l < _numLambda; l++)
         for (int i = 0; i < 2 * numIons + 1; ++i)
             result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexEmissivity = index;
-    for (int l = 0; l < _numC + 2; l++)
+    for (int l = 0; l < _numLambda + 2; l++)
         result.push_back(StateVariable::custom(index++, "volume emissivity", "powervolumedensity"));
 
     return result;
@@ -989,8 +980,10 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metal
         state->setVTherm(Z, v);
     }
 
-    for (int l = 0; l < _numC; l++)
+    for (int l = 0; l < _numLambda; l++)
     {
+        double lambda = _lambda[l];
+
         double abs = _absorptionTable.valueAtIndices(l, 0, 0, 0);
         double emi = _emissivityTable.valueAtIndices(l, 0, 0, 0);
 
@@ -1000,34 +993,113 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metal
         // Scattering
         // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
         Array sigmaScaFractions(2 * numAtoms);
-        Array sigmaScaCum(2 * numAtoms + 1);
+        Array sigmaScaCum;
 
-        // calculate the above for every wavelength; as before, leave the values for the outer wavelength points at zero
-        for (int ell = 0; ell < _numC; ++ell)
+        // bound electron scattering
+        for (int i = 0; i < numIons; i++)
         {
-            double lambda = _lambdaC[ell];
+            double abund = state->getAbundance(i);
 
-            // bound electron scattering
-            for (int i = 0; i < numIons; i++)
-            {
-                double abund = state->getAbundance(i);
+            int Z = ions[i].Z;  // TEMP THIS NEEDS TO BE FIXED LIKE IN CLOUDY WHERE FREE ELECTRON FRACTION IS USED
 
-                int Z = ions[i].Z;  // TEMP THIS NEEDS TO BE FIXED LIKE IN CLOUDY WHERE FREE ELECTRON FRACTION IS USED
+            sigmaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
+            sigmaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
+        }
 
-                sigmaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
-                sigmaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
-            }
+        // determine the normalized cumulative probability distribution and the cross section
+        double sigmaSca = NR::cdf(sigmaScaCum, sigmaScaFractions);
 
-            // determine the normalized cumulative probability distribution and the cross section
-            double sigmaSca = NR::cdf(sigmaScaCum, sigmaScaFractions);
-
-            state->setSigmaSca(l, sigmaSca);
-            for (int i = 0; i < 2 * numIons + 1; i++)
-            {
-                state->setSigmaScaCum(l, i, sigmaScaCum[i]);
-            }
+        state->setSigmaSca(l, sigmaSca);
+        for (int i = 0; i < 2 * numIons + 1; i++)
+        {
+            state->setSigmaScaCum(l, i, sigmaScaCum[i]);
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////
+
+UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Array& Jv) const
+{
+    // Calculate integrated mean intensity (W/m2)
+    Array lam = config()->radiationFieldWLG()->lambdav();
+    Array widths = config()->radiationFieldWLG()->extdlambdav();
+
+    // Find the range of indices that fall within _range
+    auto first = std::lower_bound(std::begin(lam), std::end(lam), _range.min());
+    auto last = std::upper_bound(std::begin(lam), std::end(lam), _range.max());
+
+    // Compute the starting index and count
+    size_t start = std::distance(std::begin(lam), first);
+    size_t count = std::distance(first, last);
+
+    // Slice the arrays to include only the relevant range
+    Array f_Jv = Jv[std::slice(start, count, 1)];
+    widths = widths[std::slice(start, count, 1)];
+
+    // Lookup table values
+    double J = (f_Jv * widths).sum() * 4. * M_PI;  // W/m2/m/sr -> W/m2 (integrated mean intensity)
+    double n = state->numberDensity();
+    double Z = state->metallicity();
+
+    for (int i = 0; i < numIons; i++)
+    {
+        double abund = _absorptionTable((double)i, J, n, Z);
+        state->setAbundance(i, abund);
+    }
+
+    double temp = _temperatureTable(J, n, Z);
+    state->setTemperature(temp);
+
+    for (int i = 0; i < numAtoms; i++)
+    {
+        double v = vtherm(temp, atomicMasses[i]);
+        state->setVTherm(i, v);
+    }
+
+    for (int l = 0; l < _numLambda; l++)
+    {
+        double lambda = _lambda[l];
+
+        double abs = _absorptionTable(lambda, J, n, Z);
+        double emi = _emissivityTable(lambda, J, n, Z);
+
+        state->setSigmaAbs(l, abs);
+        state->setEmissivity(l, emi);
+
+        // Scattering
+        // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
+        Array sigmaScaFractions(2 * numAtoms);
+        Array sigmaScaCum;
+
+        // bound electron scattering
+        for (int i = 0; i < numIons; i++)
+        {
+            double abund = state->getAbundance(i);
+
+            int Z = ions[i].Z;  // TEMP THIS NEEDS TO BE FIXED LIKE IN CLOUDY WHERE FREE ELECTRON FRACTION IS USED
+
+            sigmaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
+            sigmaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
+        }
+
+        // determine the normalized cumulative probability distribution and the cross section
+        double sigmaSca = NR::cdf(sigmaScaCum, sigmaScaFractions);
+
+        state->setSigmaSca(l, sigmaSca);
+        for (int i = 0; i < 2 * numIons + 1; i++)
+        {
+            state->setSigmaScaCum(l, i, sigmaScaCum[i]);
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////
+
+bool XRayIonicGasMix::isSpecificStateConverged(int numCells, int numUpdated, int numNotConverged,
+                                               MaterialState* currentAggregate, MaterialState* previousAggregate) const
+{
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1091,7 +1163,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
     if (!scatinfo->valid)
     {
         scatinfo->valid = true;
-        int lam = NR::locateClip(_lambdaC, lambda);  // this should (almost) never have to clip
+        int lam = NR::locateClip(_lambda, lambda);  // this should (almost) never have to clip
         // scattering can only happen if opacity is non-zero, so lambda should be in range of _lambdaC
         // maybe some Doppler shift but a simple clip should be sufficient
         Array sigmaScaCum(2 * numIons + 1);
@@ -1178,20 +1250,20 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
 
 DisjointWavelengthGrid* XRayIonicGasMix::emissionWavelengthGrid() const
 {
-    return _wavgridCE;
+    return _emissionGrid;
 }
 
 ////////////////////////////////////////////////////////////////////
 
 Array XRayIonicGasMix::emissionSpectrum(const MaterialState* state, const Array& Jv) const
 {
-    Array emis(_numC + 2);
+    Array emis(_numLambda + 2);
     emis[0] = 0.;
-    for (int l = 1; l < _numC + 1; l++)
+    for (int l = 1; l < _numLambda + 1; l++)
     {
         double emissivity = state->getEmissivity(l);
     }
-    emis[_numC + 1] = 0.;
+    emis[_numLambda + 1] = 0.;
 
     return emis * state->volume();
 }
