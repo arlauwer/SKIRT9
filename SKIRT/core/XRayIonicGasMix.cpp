@@ -129,13 +129,6 @@ namespace
         }
         return columns;
     }
-
-    double gaussian(double x, double mu, double stddev)
-    {
-        constexpr double front = 0.25 * M_SQRT2 * M_2_SQRTPI;
-        double u = (x - mu) / stddev;
-        return front * exp(-0.5 * u * u);
-    }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -774,11 +767,11 @@ void XRayIonicGasMix::setupSelfBefore()
     MaterialMix::setupSelfBefore();
 
     // ---- load optical properties ---- //
-    // make this static save memory?
-    _absorptionTable.open(this, "cloudy_opac.stab", "wavelength(m), intensity(W/m2/m), density(1/m3), metallicity(1)",
-                          "section(m2)");
-    _emissivityTable.open(this, "cloudy_emis.stab", "wavelength(m), intensity(W/m2/m), density(1/m3), metallicity(1)",
-                          "emissivity(W/m3)");
+    _abundanceTable.open(this, "abund.stab", "ion(1),J(W/m3),n(1/m3),Z(1)", "abund(1)", true, false);
+    _temperatureTable.open(this, "temp.stab", "J(W/m3),n(1/m3),Z(1)", "temp(K)", true, false);
+
+    _absorptionTable.open(this, "opt.stab", "lam(m),J(W/m3),n(1/m3),Z(1)", "cross(m2)", true, false);
+    _emissivityTable.open(this, "opt.stab", "lam(m),J(W/m3),n(1/m3),Z(1)", "emis(W/m3)", true, false);
 
     // create scattering helpers depending on the user-configured implementation type;
     // the respective helper constructors load the required bound-electron scattering resources
@@ -880,6 +873,13 @@ bool XRayIonicGasMix::hasExtraSpecificState() const
 
 ////////////////////////////////////////////////////////////////////
 
+MaterialMix::DynamicStateType XRayIonicGasMix::hasDynamicMediumState() const
+{
+    return DynamicStateType::Primary;
+}
+
+////////////////////////////////////////////////////////////////////
+
 bool XRayIonicGasMix::hasScatteringDispersion() const
 {
     return true;
@@ -903,7 +903,8 @@ bool XRayIonicGasMix::hasLineEmission() const
 
 vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 {
-    vector<StateVariable> result{StateVariable::numberDensity(), StateVariable::temperature()};
+    vector<StateVariable> result{StateVariable::numberDensity(), StateVariable::temperature(),
+                                 StateVariable::metallicity()};
 
     // next available custom variable index
     int index = 0;
@@ -919,7 +920,7 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 
     const_cast<XRayIonicGasMix*>(this)->_indexAbundances = index;
     for (int Z = 1; Z <= numAtoms; ++Z)
-        for (int N = 0; N != numIons; ++N)
+        for (int N = 0; N != Z; ++N)
             result.push_back(StateVariable::custom(index++, "abundance", "numbervolumedensity"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexThermalVelocity = index;
@@ -963,10 +964,13 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 ////////////////////////////////////////////////////////////////////
 
 void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metallicity, double temperature,
-                                              const Array& params) const
+                                              const Array& /*params*/) const
 {
     temperature = temperature >= 0. ? temperature : defaultTemperature;
     metallicity = metallicity >= 0. ? metallicity : defaultMetallicity;
+
+    state->setTemperature(temperature);
+    state->setMetallicity(metallicity);
 
     for (int i = 0; i < numIons; i++)
     {
@@ -992,7 +996,7 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metal
 
         // Scattering
         // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-        Array sigmaScaFractions(2 * numAtoms);
+        Array sigmaScaFractions(2 * numIons);
         Array sigmaScaCum;
 
         // bound electron scattering
@@ -1021,6 +1025,8 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metal
 
 UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Array& Jv) const
 {
+    UpdateStatus status;
+
     // Calculate integrated mean intensity (W/m2)
     Array lam = config()->radiationFieldWLG()->lambdav();
     Array widths = config()->radiationFieldWLG()->extdlambdav();
@@ -1035,10 +1041,10 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
 
     // Slice the arrays to include only the relevant range
     Array f_Jv = Jv[std::slice(start, count, 1)];
-    widths = widths[std::slice(start, count, 1)];
+    Array f_widths = widths[std::slice(start, count, 1)];
 
     // Lookup table values
-    double J = (f_Jv * widths).sum() * 4. * M_PI;  // W/m2/m/sr -> W/m2 (integrated mean intensity)
+    double J = (f_Jv * f_widths).sum() * 4. * M_PI;  // W/m2/m/sr -> W/m2 (integrated mean intensity)
     double n = state->numberDensity();
     double Z = state->metallicity();
 
@@ -1069,7 +1075,7 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
 
         // Scattering
         // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-        Array sigmaScaFractions(2 * numAtoms);
+        Array sigmaScaFractions(2 * numIons);
         Array sigmaScaCum;
 
         // bound electron scattering
@@ -1092,14 +1098,18 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
             state->setSigmaScaCum(l, i, sigmaScaCum[i]);
         }
     }
+
+    status.updateConverged();
+    return status;
 }
 
 ////////////////////////////////////////////////////////////////////
 
 bool XRayIonicGasMix::isSpecificStateConverged(int numCells, int numUpdated, int numNotConverged,
-                                               MaterialState* currentAggregate, MaterialState* previousAggregate) const
+                                               MaterialState* /*currentAggregate*/,
+                                               MaterialState* /*previousAggregate*/) const
 {
-    return true;
+    return numCells == numUpdated && numNotConverged == 0;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1111,28 +1121,28 @@ double XRayIonicGasMix::mass() const
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayIonicGasMix::sectionAbs(double lambda) const
+double XRayIonicGasMix::sectionAbs(double /*lambda*/) const
 {
     return 0.;
 }
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayIonicGasMix::sectionSca(double lambda) const
+double XRayIonicGasMix::sectionSca(double /*lambda*/) const
 {
     return 0.;
 }
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayIonicGasMix::sectionExt(double lambda) const
+double XRayIonicGasMix::sectionExt(double /*lambda*/) const
 {
     return 0.;
 }
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayIonicGasMix::opacityAbs(double lambda, const MaterialState* state, const PhotonPacket* pp) const
+double XRayIonicGasMix::opacityAbs(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int l = indexForLambda(lambda);
     double sigmaAbs = state->getSigmaAbs(l);
@@ -1141,7 +1151,7 @@ double XRayIonicGasMix::opacityAbs(double lambda, const MaterialState* state, co
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayIonicGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* pp) const
+double XRayIonicGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int l = indexForLambda(lambda);
     double sigmaSca = state->getSigmaSca(l);
@@ -1150,9 +1160,9 @@ double XRayIonicGasMix::opacitySca(double lambda, const MaterialState* state, co
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayIonicGasMix::opacityExt(double lambda, const MaterialState* state, const PhotonPacket* pp) const
+double XRayIonicGasMix::opacityExt(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
-    return opacityAbs(lambda, state, pp) + opacitySca(lambda, state, pp);
+    return opacityAbs(lambda, state, nullptr) + opacitySca(lambda, state, nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1255,13 +1265,13 @@ DisjointWavelengthGrid* XRayIonicGasMix::emissionWavelengthGrid() const
 
 ////////////////////////////////////////////////////////////////////
 
-Array XRayIonicGasMix::emissionSpectrum(const MaterialState* state, const Array& Jv) const
+Array XRayIonicGasMix::emissionSpectrum(const MaterialState* state, const Array& /*Jv*/) const
 {
     Array emis(_numLambda + 2);
     emis[0] = 0.;
     for (int l = 1; l < _numLambda + 1; l++)
     {
-        double emissivity = state->getEmissivity(l);
+        emis[l] = state->getEmissivity(l);
     }
     emis[_numLambda + 1] = 0.;
 

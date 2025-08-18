@@ -55,6 +55,8 @@ private:
 
     bool hasExtraSpecificState() const override;
 
+    DynamicStateType hasDynamicMediumState() const override;
+
     bool hasScatteringDispersion() const override;
 
     bool hasContinuumEmission() const override;
@@ -158,13 +160,11 @@ private:
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
 
-    // Axes: ions (1), intensity(W/m2/m), density(1/m3), metallicity(1)
+    // Axes: ions (1),      integrated intensity(W/m2), density(1/m3), metallicity(1)
     StoredTable<4> _abundanceTable;  // abundances (1/m3)
-
-    // Axes: intensity(W/m2/m), density(1/m3), metallicity(1)
+    // Axes:                integrated intensity(W/m2), density(1/m3), metallicity(1)
     StoredTable<3> _temperatureTable;  // temperature (K)
-
-    // Axes: wavelength(m), intensity(W/m2/m), density(1/m3), metallicity(1)
+    // Axes: wavelength(m), integrated intensity(W/m2), density(1/m3), metallicity(1)
     StoredTable<4> _absorptionTable;  // absorption cross section (m2)
     StoredTable<4> _emissivityTable;  // emissivity (W/m3)
 };
