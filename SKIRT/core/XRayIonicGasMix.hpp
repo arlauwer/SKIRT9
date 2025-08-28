@@ -143,12 +143,12 @@ private:
     // SigmaAbs:        numLambda
     // SigmaSca:        numLambda
     // SigmaScaCum:     numLambda x 2*numIons+1 (+1 for cumulative)
-    // Emissivity:      numLambda + 2
+    // Emissivity:      numLambda + 2 (+2 for 'outside' bins)
     int _indexAbundances;       // index of the abundances in the custom state variables
     int _indexThermalVelocity;  // index of the thermal velocity in the custom state variables
-    int _indexSigmaAbs;         // index of the absorption cross section in the custom state variables
-    int _indexSigmaSca;         // index of the absorption and scattering cross sections in the custom state variables
-    int _indexSigmaScaCum;      // index of the cumulative scattering cross section for Rayleigh and Compton scattering
+    int _indexKappaAbs;         // index of the absorption cross section in the custom state variables
+    int _indexKappaSca;         // index of the absorption and scattering cross sections in the custom state variables
+    int _indexKappaScaCum;      // index of the cumulative scattering cross section for Rayleigh and Compton scattering
     int _indexEmissivity;       // index of the emissivity in the custom state variables
 
     // shared variables //
@@ -160,13 +160,17 @@ private:
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
 
-    // Axes: ions (1),      integrated intensity(W/m2), density(1/m3), metallicity(1)
-    StoredTable<4> _abundanceTable;  // abundances (1/m3)
-    // Axes:                integrated intensity(W/m2), density(1/m3), metallicity(1)
-    StoredTable<3> _temperatureTable;  // temperature (K)
-    // Axes: wavelength(m), integrated intensity(W/m2), density(1/m3), metallicity(1)
-    StoredTable<4> _absorptionTable;  // absorption cross section (m2)
-    StoredTable<4> _emissivityTable;  // emissivity (W/m3)
+    // INFO: the density (1/m3) is the hden in Cloudy!
+    // Meaning that if you set the density in SKIRT (mix.txt) to 1e4, it will be the hden in Cloudy!
+    // the sum of the H abundances: H, H+ (H+ not present in SKIRT yet?), (molecules currently turned off) will be 1e4
+
+    // Axes: ions (1),      density(1/m3), metallicity(1), bin0(W/m3), bin1(W/m3)
+    StoredTable<5> _abundanceTable;  // abundances (1/m3)
+    // Axes:                density(1/m3), metallicity(1), bin0(W/m3), bin1(W/m3)
+    StoredTable<4> _temperatureTable;  // temperature (K)
+    // Axes: wavelength(m), density(1/m3), metallicity(1), bin0(W/m3), bin1(W/m3)
+    StoredTable<5> _opacityTable;     // absorption opacity (1/m)
+    StoredTable<5> _emissivityTable;  // emissivity (W/m3)
 };
 
 #endif

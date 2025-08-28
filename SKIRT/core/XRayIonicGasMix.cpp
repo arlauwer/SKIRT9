@@ -913,8 +913,8 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     // State variables
     // abundances:      numIons
     // vtherm:          numAtoms
-    // sigmaabsC:       numLambda
-    // sigmascaC:       numLambda
+    // kappaabsC:       numLambda
+    // kappascaC:       numLambda
     // cumprobscaC:     numLambda x 2*numIons+1 (+1 for cumulative)
     // emissivityC:     numLambda + 2
     // LINES WIP
@@ -927,13 +927,13 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     const_cast<XRayIonicGasMix*>(this)->_indexThermalVelocity = index;
     result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
 
-    const_cast<XRayIonicGasMix*>(this)->_indexSigmaAbs = index;
+    const_cast<XRayIonicGasMix*>(this)->_indexKappaAbs = index;
     for (int l = 0; l < _numLambda; l++) result.push_back(StateVariable::custom(index++, "absorption opacity", "area"));
 
-    const_cast<XRayIonicGasMix*>(this)->_indexSigmaSca = index;
+    const_cast<XRayIonicGasMix*>(this)->_indexKappaSca = index;
     for (int l = 0; l < _numLambda; l++) result.push_back(StateVariable::custom(index++, "scattering opacity", "area"));
 
-    const_cast<XRayIonicGasMix*>(this)->_indexSigmaScaCum = index;
+    const_cast<XRayIonicGasMix*>(this)->_indexKappaScaCum = index;
     for (int l = 0; l < _numLambda; l++)
         for (int i = 0; i < 2 * numIons + 1; ++i)
             result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
@@ -951,12 +951,12 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 #define getAbundance(ion) custom(_indexAbundances + (ion))
 #define setVTherm(Z, value) setCustom(_indexThermalVelocity + (Z), (value))
 #define getVTherm(Z) custom(_indexThermalVelocity + (Z))
-#define setSigmaAbs(l, value) setCustom(_indexSigmaAbs + (l), (value))
-#define getSigmaAbs(l) custom(_indexSigmaAbs + (l))
-#define setSigmaSca(l, value) setCustom(_indexSigmaSca + (l), (value))
-#define getSigmaSca(l) custom(_indexSigmaSca + (l))
-#define setSigmaScaCum(l, index, value) setCustom(_indexSigmaScaCum + (l) * 2 * numAtoms + (index), (value))
-#define getSigmaScaCum(l, index) custom(_indexSigmaScaCum + (l) * 2 * numAtoms + (index))
+#define setKappaAbs(l, value) setCustom(_indexKappaAbs + (l), (value))
+#define getKappaAbs(l) custom(_indexKappaAbs + (l))
+#define setKappaSca(l, value) setCustom(_indexKappaSca + (l), (value))
+#define getKappaSca(l) custom(_indexKappaSca + (l))
+#define setKappaScaCum(l, index, value) setCustom(_indexKappaScaCum + (l) * 2 * numAtoms + (index), (value))
+#define getKappaScaCum(l, index) custom(_indexKappaScaCum + (l) * 2 * numAtoms + (index))
 #define setEmissivity(l, value) setCustom(_indexEmissivity + (l), (value))
 #define getEmissivity(l) custom(_indexEmissivity + (l))
 
@@ -991,16 +991,16 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, do
     {
         double lambda = _lambda[l];
 
-        double abs = _opacityTable((double)l, n, Z, J1, J2);
-        double emi = _emissivityTable((double)l, n, Z, J1, J2);
+        double abs = _opacityTable(lambda, n, Z, J1, J2);
+        double emi = _emissivityTable(lambda, n, Z, J1, J2);
 
-        state->setSigmaAbs(l, abs);
+        state->setKappaAbs(l, abs);
         state->setEmissivity(l, emi);
 
         // Scattering
         // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-        Array sigmaScaFractions(2 * numIons);
-        Array sigmaScaCum;
+        Array kappaScaFractions(2 * numIons);
+        Array kappaScaCum;
 
         // bound electron scattering
         for (int i = 0; i < numIons; i++)
@@ -1009,17 +1009,17 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, do
 
             int Z = ions[i].Z;  // TEMP THIS NEEDS TO BE FIXED LIKE IN CLOUDY WHERE FREE ELECTRON FRACTION IS USED
 
-            sigmaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
-            sigmaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
+            kappaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
+            kappaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
         }
 
         // determine the normalized cumulative probability distribution and the cross section
-        double sigmaSca = NR::cdf(sigmaScaCum, sigmaScaFractions);
+        double kappaSca = NR::cdf(kappaScaCum, kappaScaFractions);
 
-        state->setSigmaSca(l, sigmaSca);
+        state->setKappaSca(l, kappaSca);
         for (int i = 0; i < 2 * numIons + 1; i++)
         {
-            state->setSigmaScaCum(l, i, sigmaScaCum[i]);
+            state->setKappaScaCum(l, i, kappaScaCum[i]);
         }
     }
 }
@@ -1040,7 +1040,6 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     double Z = state->metallicity();
 
     Array prevAbund(numIons);
-
     for (int i = 0; i < numIons; i++)
     {
         prevAbund[i] = state->getAbundance(i);
@@ -1064,13 +1063,13 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
         double abs = _opacityTable(lambda, n, Z, J1, J2);
         double emi = _emissivityTable(lambda, n, Z, J1, J2);
 
-        state->setSigmaAbs(l, abs);
+        state->setKappaAbs(l, abs);
         state->setEmissivity(l, emi);
 
         // Scattering
         // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-        Array sigmaScaFractions(2 * numIons);
-        Array sigmaScaCum;
+        Array kappaScaFractions(2 * numIons);
+        Array kappaScaCum;
 
         // bound electron scattering
         for (int i = 0; i < numIons; i++)
@@ -1079,17 +1078,17 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
 
             int Z = ions[i].Z;  // TEMP THIS NEEDS TO BE FIXED LIKE IN CLOUDY WHERE FREE ELECTRON FRACTION IS USED
 
-            sigmaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
-            sigmaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
+            kappaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
+            kappaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
         }
 
         // determine the normalized cumulative probability distribution and the cross section
-        double sigmaSca = NR::cdf(sigmaScaCum, sigmaScaFractions);
+        double kappaSca = NR::cdf(kappaScaCum, kappaScaFractions);
 
-        state->setSigmaSca(l, sigmaSca);
+        state->setKappaSca(l, kappaSca);
         for (int i = 0; i < 2 * numIons + 1; i++)
         {
-            state->setSigmaScaCum(l, i, sigmaScaCum[i]);
+            state->setKappaScaCum(l, i, kappaScaCum[i]);
         }
     }
 
@@ -1097,13 +1096,16 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     double conv = 0.;
     for (int i = 0; i < numIons; i++)
     {
-        double diff = (prevAbund[i] - state->getAbundance(i));
+        double abund = state->getAbundance(i);
+
+        double diff = (prevAbund[i] - abund) / n;
         conv += diff * diff;
     }
-    // somehow handle the zero-abundances
 
-    // status.updateConverged();
-    status.updateNotConverged();
+    if (conv < 1e-2)
+        status.updateConverged();
+    else
+        status.updateNotConverged();
     return status;
 }
 
@@ -1127,7 +1129,7 @@ double XRayIonicGasMix::mass() const
 
 double XRayIonicGasMix::sectionAbs(double /*lambda*/) const
 {
-    return 0.;
+    return 0;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1149,7 +1151,7 @@ double XRayIonicGasMix::sectionExt(double /*lambda*/) const
 double XRayIonicGasMix::opacityAbs(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int l = indexForLambda(lambda);
-    return state->getSigmaAbs(l);
+    return state->getKappaAbs(l);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1157,7 +1159,7 @@ double XRayIonicGasMix::opacityAbs(double lambda, const MaterialState* state, co
 double XRayIonicGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int l = indexForLambda(lambda);
-    return state->getSigmaSca(l);
+    return state->getKappaSca(l);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1178,10 +1180,10 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
         int lam = NR::locateClip(_lambda, lambda);  // this should (almost) never have to clip
         // scattering can only happen if opacity is non-zero, so lambda should be in range of _lambdaC
         // maybe some Doppler shift but a simple clip should be sufficient
-        Array sigmaScaCum(2 * numIons + 1);
-        for (int i = 0; i < 2 * numIons + 1; i++) sigmaScaCum[i] = state->getSigmaScaCum(lam, i);
+        Array kappaScaCum(2 * numIons + 1);
+        for (int i = 0; i < 2 * numIons + 1; i++) kappaScaCum[i] = state->getKappaScaCum(lam, i);
 
-        scatinfo->species = NR::locateClip(sigmaScaCum, random()->uniform());
+        scatinfo->species = NR::locateClip(kappaScaCum, random()->uniform());
 
         int i = scatinfo->species % numIons;
         int Z = ions[i].Z;
