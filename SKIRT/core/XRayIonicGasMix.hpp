@@ -64,6 +64,7 @@ private:
 
     //============= Capabilities =============
 
+public:
     MaterialType materialType() const override;
 
     bool hasPolarizedScattering() const override;

@@ -6,8 +6,8 @@
 #ifndef XRAYIONICGASMIXFAMILY_HPP
 #define XRAYIONICGASMIXFAMILY_HPP
 
-#include "XRayIonicGasMix.hpp"
 #include "MaterialMixFamily.hpp"
+#include "XRayIonicGasMix.hpp"
 
 //////////////////////////////////////////////////////////////////////
 
@@ -27,7 +27,6 @@ class XRayIonicGasMixFamily : public MaterialMixFamily
         ENUM_VAL(BoundElectrons, Good, "use smooth Rayleigh scattering and exact bound-Compton scattering")
         ENUM_VAL(BoundElectrons, Exact, "use anomalous Rayleigh scattering and exact bound-Compton scattering")
     ENUM_END()
-    
     ITEM_CONCRETE(XRayIonicGasMixFamily, MaterialMixFamily, "a family of ionic mixes for each cell")
 
         PROPERTY_STRING(ions, "the names of the ions for each element seperated by , (e.g. H1,He2,Fe1,Fe14,...)")
@@ -39,8 +38,8 @@ class XRayIonicGasMixFamily : public MaterialMixFamily
     ITEM_END()
 
     //====================== Setup - Destruction =====================
-public:
 
+public:
     ~XRayIonicGasMixFamily() override;
 
     void setupSelfBefore() override;
@@ -54,9 +53,15 @@ public:
 
     const MaterialMix* mix() override;
 
+private:
+    // quick fix
+    void setup();
+
     //======================== Data Members ========================
+
 private:
     vector<string> _ionNames;
+    XRayIonicGasMix::BoundElectrons _boundElectrons;
     vector<XRayIonicGasMix*> _mixes;
     XRayIonicGasMix* _defaultMix{nullptr};
 };
