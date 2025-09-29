@@ -13,6 +13,7 @@
 #include "SnapshotParameter.hpp"
 #include "StoredTable.hpp"
 #include "TextInFile.hpp"
+#include "Log.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -45,10 +46,11 @@ public:
     //======== Private support functions =======
 
 private:
-    int indexForLambda(double lambda) const;
+    int indexForOpacity(double lambda) const;
 
     //============= Capabilities =============
 
+public:
     MaterialType materialType() const override;
 
     bool hasPolarizedScattering() const override;
@@ -78,8 +80,12 @@ public:
     bool isSpecificStateConverged(int numCells, int numUpdated, int numNotConverged, MaterialState* currentAggregate,
                                   MaterialState* previousAggregate) const override;
 
+private:
+    double updateState(MaterialState* state, double n, double Z, double J1, double J2, double J3) const;
+
     //============= Low-level material properties =============
 
+public:
     double mass() const override;
 
     double sectionAbs(double lambda) const override;
@@ -135,6 +141,8 @@ public:
     class ScatteringHelper;
 
 private:
+    Log* _log{nullptr};
+
     Range _range;
 
     // MaterialState indices: size //
@@ -152,8 +160,11 @@ private:
     int _indexEmissivity;       // index of the emissivity in the custom state variables
 
     // shared variables //
-    int _numLambda;
-    Array _lambda;
+    int _numLambdaOpac;
+    Array _lambdaOpac;
+
+    int _numLambdaEmis;
+    Array _lambdaEmis;
     DisjointWavelengthGrid* _emissionGrid{nullptr};  // grid for emission
 
     // bound-electron scattering helpers depending on the configured implementation
@@ -164,13 +175,13 @@ private:
     // Meaning that if you set the density in SKIRT (mix.txt) to 1e4, it will be the hden in Cloudy!
     // the sum of the H abundances: H, H+ (H+ not present in SKIRT yet?), (molecules currently turned off) will be 1e4
 
-    // Axes: ions (1),      density(1/m3), metallicity(1), bin0(W/m3), bin1(W/m3)
-    StoredTable<5> _abundanceTable;  // abundances (1/m3)
-    // Axes:                density(1/m3), metallicity(1), bin0(W/m3), bin1(W/m3)
-    StoredTable<4> _temperatureTable;  // temperature (K)
-    // Axes: wavelength(m), density(1/m3), metallicity(1), bin0(W/m3), bin1(W/m3)
-    StoredTable<5> _opacityTable;     // absorption opacity (1/m)
-    StoredTable<5> _emissivityTable;  // emissivity (W/m3)
+    // Axes:                density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
+    StoredTable<2+3> _temperatureTable;  // temperature (K)
+    // Axes: ions (1),      density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
+    StoredTable<3+3> _abundanceTable;  // abundances (1/m3)
+    // Axes: wavelength(m), density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
+    StoredTable<3+3> _opacityTable;     // absorption opacity (1/m)
+    StoredTable<3+3> _emissivityTable;  // emissivity (W/m3)
 };
 
 #endif
