@@ -26,8 +26,6 @@ namespace
 
     static constexpr double defaultTemperature = 1.;
     static constexpr double defaultMetallicity = 0.;
-    // The amount of bins in the radiation field (these should match the Cloudy table)
-    static constexpr int radBins = 3;
 
     static constexpr int numAtoms = 30;  // H to Zn
     // masses of the elements in amu up to Z=30
@@ -825,6 +823,34 @@ void XRayIonicGasMix::setupSelfBefore()
     _opacityTable.axisArray<0, double>(_lambdaOpac);
     _numLambdaOpac = _lambdaOpac.size();
 
+    ///////// TEST TEMP /////////
+    Array bins;
+    _opacityTable.axisArray<3 + 0, double>(bins);
+    _minBins[0] = bins.min();
+    _maxBins[0] = bins.max();
+    _opacityTable.axisArray<3 + 1, double>(bins);
+    _minBins[1] = bins.min();
+    _maxBins[1] = bins.max();
+    _opacityTable.axisArray<3 + 2, double>(bins);
+    _minBins[2] = bins.min();
+    _maxBins[2] = bins.max();
+    _opacityTable.axisArray<3 + 3, double>(bins);
+    _minBins[3] = bins.min();
+    _maxBins[3] = bins.max();
+    _opacityTable.axisArray<3 + 4, double>(bins);
+    _minBins[4] = bins.min();
+    _maxBins[4] = bins.max();
+    _opacityTable.axisArray<3 + 5, double>(bins);
+    _minBins[5] = bins.min();
+    _maxBins[5] = bins.max();
+    _opacityTable.axisArray<3 + 6, double>(bins);
+    _minBins[6] = bins.min();
+    _maxBins[6] = bins.max();
+    _opacityTable.axisArray<3 + 7, double>(bins);
+    _minBins[7] = bins.min();
+    _maxBins[7] = bins.max();
+    ///////// TEST TEMP /////////
+
     // emissivity wavelengths
     _emissivityTable.axisArray<0, double>(_lambdaEmis);
     _numLambdaEmis = _lambdaEmis.size();
@@ -972,16 +998,17 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, double /*temperature*/,
                                               const Array& /*params*/) const
 {
-    double J1 = 1e50;
-    double J2 = 1e50;
-    double J3 = 1e50;
     double n = state->numberDensity();
 
     // initialize metallicity
     Z = Z >= 0. ? Z : defaultMetallicity;
     state->setMetallicity(Z);
 
-    updateState(state, n, Z, J1, J2, J3);
+    int numBins = config()->radiationFieldWLG()->numBins();
+    Array J(numBins);
+    J = 1e50;  // temporary really high for now
+
+    updateState(state, n, Z, J);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -993,20 +1020,23 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     Array radWidth = config()->radiationFieldWLG()->dlambdav();
 
     // Lookup table values
-    Array J = Jv * radWidth * 4. * M_PI;  // W/m2/m/sr -> W/m2 (integrated mean intensity)
-    double J1 = J[0];
-    double J2 = J[1];
-    double J3 = J[2];
-    double n = state->numberDensity() * 1e-6; // 1/m3 -> 1/cm3
+    Array J = Jv * radWidth * 4. * M_PI;       // W/m2/m/sr -> W/m2 (integrated mean intensity)
+    double n = state->numberDensity() * 1e-6;  // 1/m3 -> 1/cm3
     double Z = state->metallicity();
 
-    double conv = updateState(state, n, Z, J1, J2, J3);
+    double conv = updateState(state, n, Z, J);
 
-    // _log->info("XRayIonicGasMix::updateSpecificState: n=" + StringUtils::toString(n) + " Z=" + StringUtils::toString(Z)
-    //            + " J1=" + StringUtils::toString(J1) + " J2=" + StringUtils::toString(J2)
-    //            + " J3=" + StringUtils::toString(J3) + " conv=" + StringUtils::toString(conv));
+    for (int b = 0; b < radBins; b++)
+    {
+        if (J[b] < _minBins[b])
+            _log->info("Clipped! m=" + StringUtils::toString(state->cellIndex()) + "\tb=" + StringUtils::toString(b)
+                       + "\tJ=" + StringUtils::toString(J[b], 'e') + "\t<" + StringUtils::toString(_minBins[b], 'e'));
+        if (J[b] > _maxBins[b])
+            _log->info("Clipped! m=" + StringUtils::toString(state->cellIndex()) + "\tb=" + StringUtils::toString(b)
+                       + "\tJ=" + StringUtils::toString(J[b], 'e') + "\t>" + StringUtils::toString(_maxBins[b], 'e'));
+    }
 
-    if (conv < 1e-6)
+    if (conv < 1e-3)
         status.updateConverged();
     else
         status.updateNotConverged();
@@ -1024,16 +1054,25 @@ bool XRayIonicGasMix::isSpecificStateConverged(int numCells, int numUpdated, int
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, double J1, double J2, double J3) const
+double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, const Array& J) const
 {
-    double temp = _temperatureTable(n, Z, J1, J2, J3);
+    double J1 = J[0];
+    double J2 = J[1];
+    double J3 = J[2];
+    double J4 = J[3];
+    double J5 = J[4];
+    double J6 = J[5];
+    double J7 = J[6];
+    double J8 = J[7];
+
+    double temp = _temperatureTable(n, Z, J1, J2, J3, J4, J5, J6, J7, J8);
     state->setTemperature(temp);
 
     Array prevAbund(numIons);
     for (int i = 0; i < numIons; i++)
     {
         prevAbund[i] = state->getAbundance(i);
-        double abund = _abundanceTable((double)i, n, Z, J1, J2, J3);
+        double abund = _abundanceTable((double)i, n, Z, J1, J2, J3, J4, J5, J6, J7, J8);
         state->setAbundance(i, abund);
     }
 
@@ -1047,7 +1086,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, do
     {
         double lambda = _lambdaOpac[o];
 
-        double abs = _opacityTable(lambda, n, Z, J1, J2, J3);
+        double abs = _opacityTable(lambda, n, Z, J1, J2, J3, J4, J5, J6, J7, J8);
 
         state->setKappaAbs(o, abs);
 
@@ -1080,7 +1119,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, do
     for (int e = 0; e < _numLambdaEmis; e++)
     {
         double lambda = _lambdaEmis[e];
-        double emi = _emissivityTable(lambda, n, Z, J1, J2, J3);
+        double emi = _emissivityTable(lambda, n, Z, J1, J2, J3, J4, J5, J6, J7, J8);
         state->setEmissivity(e, emi);
     }
 

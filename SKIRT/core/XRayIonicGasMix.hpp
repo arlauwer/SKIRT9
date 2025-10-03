@@ -8,12 +8,15 @@
 
 #include "ArrayTable.hpp"
 #include "EmittingGasMix.hpp"
+#include "Log.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
 #include "SnapshotParameter.hpp"
 #include "StoredTable.hpp"
 #include "TextInFile.hpp"
-#include "Log.hpp"
+
+// The amount of bins in the radiation field (these should match the Cloudy table)
+static constexpr int radBins = 8;
 
 ////////////////////////////////////////////////////////////////////
 
@@ -81,7 +84,7 @@ public:
                                   MaterialState* previousAggregate) const override;
 
 private:
-    double updateState(MaterialState* state, double n, double Z, double J1, double J2, double J3) const;
+    double updateState(MaterialState* state, double n, double Z, const Array& J) const;
 
     //============= Low-level material properties =============
 
@@ -176,12 +179,15 @@ private:
     // the sum of the H abundances: H, H+ (H+ not present in SKIRT yet?), (molecules currently turned off) will be 1e4
 
     // Axes:                density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
-    StoredTable<2+3> _temperatureTable;  // temperature (K)
+    StoredTable<2 + radBins> _temperatureTable;  // temperature (K)
     // Axes: ions (1),      density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
-    StoredTable<3+3> _abundanceTable;  // abundances (1/m3)
+    StoredTable<3 + radBins> _abundanceTable;  // abundances (1/m3)
     // Axes: wavelength(m), density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
-    StoredTable<3+3> _opacityTable;     // absorption opacity (1/m)
-    StoredTable<3+3> _emissivityTable;  // emissivity (W/m3)
+    StoredTable<3 + radBins> _opacityTable;     // absorption opacity (1/m)
+    StoredTable<3 + radBins> _emissivityTable;  // emissivity (W/m3)
+
+    std::array<double, radBins> _minBins;
+    std::array<double, radBins> _maxBins;
 };
 
 #endif
