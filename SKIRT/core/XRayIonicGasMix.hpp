@@ -42,13 +42,18 @@ class XRayIonicGasMix : public MaterialMix
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
         ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level3")
+
+        PROPERTY_BOOL(resonantScattering, "enable Lyman resonant scattering for all hydrogen-like ions")
+        ATTRIBUTE_DEFAULT_VALUE(resonantScattering, "false")
+        ATTRIBUTE_DISPLAYED_IF(resonantScattering, "Level2")
+
     ITEM_END()
 
     //============= Construction - Setup - Destruction =============
 
 public:
-    explicit XRayIonicGasMix(SimulationItem* parent, string ions, BoundElectrons boundElectrons,
-                             vector<double> abundances, double temperature, bool setup);
+    explicit XRayIonicGasMix(SimulationItem* parent, string ions, vector<double> abundances, double temperature,
+                             BoundElectrons boundElectrons, bool setup);
 
     void setupSelfBefore() override;
 
@@ -68,6 +73,8 @@ public:
     MaterialType materialType() const override;
 
     bool hasPolarizedScattering() const override;
+
+    bool hasResonantScattering() const override;
 
     bool hasExtraSpecificState() const override;
 
@@ -99,7 +106,7 @@ public:
 
     Array sigmaSca(double lambda, const MaterialState* state) const;
 
-    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda) const;
+    void setScatteringInfoIfNeeded(PhotonPacket* pp, const MaterialState* state, double lambda) const;
 
     void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;
@@ -122,78 +129,18 @@ public:
 
     struct IonParam
     {
-        IonParam(short Z, short N, double mass, string name) : Z(Z), N(N), mass(mass), name(name) {}
+        IonParam(short Z, short N) : Z(Z), N(N) {}
 
-        short Z;      // atomic number
-        short N;      // number of electrons
-        double mass;  // mass of the ion (amu)
-        double vth;   // thermal velocity of the ion (m/s)
-        string name;  // name of the ion (eg. Fe1 for neutral iron)
-    };
-
-    struct FluorescenceParam
-    {
-        FluorescenceParam(const Array& a) : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), omega(a[4]), E(a[5]), W(a[6]) {}
-
-        int papIndex{-1};  // index of the photo-absorption transition
-        short Z;           // atomic number
-        short N;           // number of electrons
-        short n;           // principal quantum number of the shell with the hole
-        short l;           // orbital quantum number of the subshell with the hole
-        double omega;      // fluorescence yield (1)
-        double E;          // (central) energy of the emitted photon (eV)
-        double W;          // FWHM of the Lorentz shape for the emitted photon (eV), or zero
-    };
-
-    struct PhotoAbsorbParam
-    {
-        PhotoAbsorbParam(const Array& a)
-            : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), Eth(a[4]), E0(a[5]), sigma0(a[6]), ya(a[7]), P(a[8]), yw(a[9])
-        {}
-
-        int ionIndex{-1};   // index of the ion
-        short Z;            // atomic number
-        short N;            // number of electrons
-        short n;            // principal quantum number of the shell
-        short l;            // orbital quantum number of the subshell
-        double Eth;         // subshell ionization threshold energy (eV)
-        double Emax = 5e5;  // maximum energy for validity of the formula (eV)
-        double E0;          // fit parameter (eV)
-        double sigma0;      // fit parameter (Mb = 10^-22 m^2)
-        double ya;          // fit parameter (1)
-        double P;           // fit parameter (1)
-        double yw;          // fit parameter (1)
-        double y0 = 0.;     // fit parameter (1)
-        double y1 = 0.;     // fit parameter (1)
-
-        double Es;
-        double sigmamax;
-
-        // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
-        // without taking into account thermal dispersion
-        double photoAbsorbSection(double E) const;
-
-        // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
-        // approximating thermal dispersion by replacing the steep threshold transition by a sigmoid
-        // error function with given parameters (dispersion and maximum value)
-        double photoAbsorbThermalSection(double E) const;
-    };
-
-    struct BoundBoundParam
-    {
-        BoundBoundParam(const Array& a) : Z(a[0]), N(a[1]), E(a[2]), A(a[3]) {}
-
-        int ionIndex{-1};  // index of the ion
-        short Z;           // atomic number
-        short N;           // number of electrons
-        double E;          // energy of the transition (eV)
-        double A;          // Einstein A coefficient (s^-1)
-        // add Chianti index?
+        short Z;  // atomic number
+        short N;  // number of electrons
     };
 
 private:
     int _numIons;  // total number of ions
-    vector<IonParam> _ionParams;
+    int _numFluo;  // total number of fluorescence transitions
+    int _numRes;   // total number of Lyman resonant scattering transitions
+
+    vector<IonParam> _ionParams;  // all the used ion parameters
 
     // all data members are precalculated in setupSelfAfter()
 
@@ -211,12 +158,18 @@ private:
     vector<double> _centralfluov;  // indexed on fluo
     vector<double> _widthfluov;    // indexed on fluo
 
+    // resonant scattering parameters for each of the Lyman transitions
+    vector<double> _aresv;       // indexed on res
+    vector<double> _centerresv;  // indexed on res
+
     // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
     //   - Rayleigh scattering by bound electrons for each atom
     //   - Compton scattering by bound electrons for each atom
     //   - fluorescence transitions
     vector<double> _vthermscav;   // indexed on ion + fluo
-    ArrayTable<2> _cumprobscavv;  // indexed on wav, 2*ion + fluo
+    ArrayTable<2> _cumprobscavv;  // indexed on wav, 2*ion + fluo + res
+
+    vector<double> _vtherm;  // indexed on atom
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper

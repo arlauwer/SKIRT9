@@ -51,7 +51,7 @@ const MaterialMix* XRayIonicGasMixFamily::mix(double /*Z*/, double T, const Arra
         if (mix->abundances() == abundances) return mix;
     }
 
-    XRayIonicGasMix* mix = new XRayIonicGasMix(this, _ions, _boundElectrons, abundances, T, true);
+    XRayIonicGasMix* mix = new XRayIonicGasMix(this, _ions, abundances, T, _boundElectrons, true);
     _mixes.push_back(mix);
 
     return mix;
@@ -95,9 +95,8 @@ const MaterialMix* XRayIonicGasMixFamily::mix()
     {
         setup();
 
-        _defaultMix =
-            new XRayIonicGasMix(this, _ions, _boundElectrons, vector<double>(_ionNames.size(), 0.), 0., true);
+        vector<double> abundances(_ionNames.size(), 0.);
+        _defaultMix = new XRayIonicGasMix(this, _ions, abundances, 0., _boundElectrons, true);
     }
-    bool t = _defaultMix->hasPolarizedScattering();
     return _defaultMix;
 }

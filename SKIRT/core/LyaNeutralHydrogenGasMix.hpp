@@ -89,8 +89,8 @@ public:
         density, so this function returns a list containing these two items. */
     vector<StateVariable> specificStateVariableInfo() const override;
 
-    /** This function initializes the specific state variables requested by this fragmented dust
-        mix through the specificStateVariableInfo() function except for the number density. For the
+    /** This function initializes the specific state variables requested by this material mix
+        through the specificStateVariableInfo() function except for the number density. For the
         Lyman-alpha material mix, the function initializes the temperature to the specified
         imported temperature, or if this is not available, to the user-configured default
         temperature for this material mix. The metallicity and custom parameter arguments are
@@ -171,6 +171,7 @@ public:
 private:
     // the dipole phase function helper instance - initialized during setup
     DipolePhaseFunction _dpf;
+    double _vth;  // default thermal velocity
 };
 
 ////////////////////////////////////////////////////////////////////

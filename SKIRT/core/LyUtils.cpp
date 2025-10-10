@@ -3,7 +3,8 @@
 ////       © Astronomical Observatory, Ghent University         ////
 ///////////////////////////////////////////////////////////////// */
 
-#include "LyaUtils.hpp"
+#include "LyUtils.hpp"
+#include "Atoms.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
 #include "Random.hpp"
@@ -13,32 +14,42 @@
 
 namespace
 {
-    constexpr double c = Constants::c();              // speed of light in vacuum
-    constexpr double kB = Constants::k();             // Boltzmann constant
-    constexpr double mp = Constants::Mproton();       // proton mass
-    constexpr double la = Constants::lambdaLya();     // central Lyman-alpha wavelength
-    constexpr double Aa = Constants::EinsteinALya();  // Einstein A coefficient for Lyman-alpha transition
+    constexpr double c = Constants::c();         // speed of light in vacuum
+    constexpr double kB = Constants::k();        // Boltzmann constant
+    constexpr double mp = Constants::Mproton();  // proton mass
+    // constexpr double la = Constants::lambdaLya();     // central Lyman-alpha wavelength
+    // constexpr double Aa = Constants::EinsteinALya();  // Einstein A coefficient for Lyman-alpha transition
 }
 
 ////////////////////////////////////////////////////////////////////
 
-double LyaUtils::section(double lambda, double T)
+double LyUtils::vtherm(double T, double mass)
 {
-    double vth = sqrt(2. * kB / mp * T);                 // thermal velocity for T
-    double a = Aa * la / 4. / M_PI / vth;                // Voigt parameter
-    double x = (la - lambda) / lambda * c / vth;         // dimensionless frequency
-    double sigma0 = 3. * la * la * M_2_SQRTPI / 4. * a;  // cross section at line center
-    return sigma0 * VoigtProfile::value(a, x);           // cross section at given x
+    return sqrt(2 * Constants::k() * T / mass);
 }
 
 ////////////////////////////////////////////////////////////////////
 
-std::pair<Vec, bool> LyaUtils::sampleAtomVelocity(double lambda, double T, double nH, Direction kin,
-                                                  Configuration* config, Random* random)
+// double mass = Atoms::mass(Z);                         // mass of the ion
+// double vth = sqrt(2. * kB * T / mass);                // thermal velocity for T
+// double a = lamA / 4. / M_PI / vth;                    // Voigt parameter
+// double x = (lam - lambda) / lambda * c / vth;         // dimensionless frequency
+// double sigma0 = g * lam * lam * M_2_SQRTPI / 4. * a;  // cross section at line center
+// return sigma0 * VoigtProfile::value(a, x);            // cross section at given x
+
+double LyUtils::section(double vth, double a, double center, double g, double lambda)
 {
-    double vth = sqrt(2. * kB / mp * T);          // thermal velocity for T
-    double a = Aa * la / 4. / M_PI / vth;         // Voigt parameter
-    double x = (la - lambda) / lambda * c / vth;  // dimensionless frequency
+    double x = (center - lambda) / lambda * c / vth;            // dimensionless frequency
+    double sigma0 = g * center * center * M_2_SQRTPI / 4. * a;  // cross section at line center
+    return sigma0 * VoigtProfile::value(a, x);                  // cross section at given x
+}
+
+////////////////////////////////////////////////////////////////////
+
+std::pair<Vec, bool> LyUtils::sampleAtomVelocity(double vth, double a, double center, double lambda, double T,
+                                                 double nH, Direction kin, Configuration* config, Random* random)
+{
+    double x = (center - lambda) / lambda * c / vth;  // dimensionless frequency
 
     // generate two directions that are orthogonal to each other and to the incoming photon packet direction
     Direction k1 = (kin.kx() || kin.ky()) ? Direction(kin.ky(), -kin.kx(), 0., true) : Direction(1., 0., 0., false);
@@ -93,7 +104,7 @@ std::pair<Vec, bool> LyaUtils::sampleAtomVelocity(double lambda, double T, doubl
 
 ////////////////////////////////////////////////////////////////////
 
-double LyaUtils::shiftWavelength(double lambda, const Vec& vatom, const Direction& kin, const Direction& kout)
+double LyUtils::shiftWavelength(double lambda, const Vec& vatom, const Direction& kin, const Direction& kout)
 {
     return lambda / (1 - Vec::dot(kin, vatom) / c) * (1 - Vec::dot(kout, vatom) / c);
 }
