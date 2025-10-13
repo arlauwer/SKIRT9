@@ -161,12 +161,12 @@ private:
     // resonant scattering parameters for each of the Lyman transitions
     vector<double> _aresv;       // indexed on res
     vector<double> _centerresv;  // indexed on res
+    vector<int> _Zresv;          // indexed on res
 
     // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
     //   - Rayleigh scattering by bound electrons for each atom
     //   - Compton scattering by bound electrons for each atom
     //   - fluorescence transitions
-    vector<double> _vthermscav;   // indexed on ion + fluo
     ArrayTable<2> _cumprobscavv;  // indexed on wav, 2*ion + fluo + res
 
     vector<double> _vtherm;  // indexed on atom

@@ -169,10 +169,10 @@ namespace
     // Lyman resonant scattering parameters
     struct LyParams
     {
-        LyParams(const Array& a) : Z(a[0]), a(a[1]), center(a[2]), g(a[3]) {}
+        LyParams(const Array& a) : Z(a[0]), lamA(a[1]), lam(a[2]), g(a[3]) {}
         int Z;
-        double a;
-        double center;
+        double lamA;
+        double lam;
         double g;
     };
 
@@ -865,23 +865,27 @@ void XRayIonicGasMix::setupSelfBefore()
     // ------------ load resources ------------
 
     // photo-absorption
-    auto pap = loadStruct<PhotoAbsorbParam, 10>(this, "XRay_PA.txt", "photoabsorption data");
+    auto pap = loadStruct<PhotoAbsorbParam, 10>(this, "Ionic_PA.txt", "photoabsorption data");
     // fluoresence
-    auto flp = loadStruct<FluorescenceParam, 7>(this, "XRay_FL.txt", "fluorescence data");
+    auto flp = loadStruct<FluorescenceParam, 7>(this, "Ionic_FL.txt", "fluorescence data");
     // hydrogen-like lyman scattering
     vector<LyParams> rsp;
-    if (resonantScattering()) rsp = loadStruct<LyParams, 4>(this, "XRay_RS.txt", "lyman scattering data");
+    if (resonantScattering()) rsp = loadStruct<LyParams, 4>(this, "Ionic_RS.txt", "lyman scattering data");
 
     // hydrogen-like lyman fluorescence (recombinaton followed by bound-bound emission)
     // although not strictly fluorescence, it does not overlap with the existing
-    // fluorescence data since XRay_FL.txt only goes to N=5 and this is for N=1
-    auto lap = loadStruct<LyaParams, 3>(this, "XRay_Lya.txt", "Lya energies");
+    // fluorescence data since Ionic_FL.txt only goes to N=5 and this is for N=1
+    auto lap = loadStruct<LyaParams, 3>(this, "Ionic_Lya_E.txt", "Lya energies");
     // hydrogen-like lyman alpha1 yields
-    StoredTable<2> lya1o(this, "XRay_Lya.stab", "Z(1),T(K)", "J12(1)");
+    StoredTable<2> lya1o(this, "Ionic_Lya_Y.stab", "Z(1),T(K)", "J32(1)");
     // hydrogen-like lyman alpha2 yields
-    StoredTable<2> lya2o(this, "XRay_Lya.stab", "Z(1),T(K)", "J32(1)");
+    StoredTable<2> lya2o(this, "Ionic_Lya_Y.stab", "Z(1),T(K)", "J12(1)");
 
     // ------------ save required resources ------------
+
+    // calculate and store the thermal velocities for each atomic number
+    _vtherm.resize(numAtoms, 0.);
+    for (int Z = 1; Z <= numAtoms; Z++) _vtherm[Z - 1] = sqrt(Constants::k() * temperature() / Atoms::mass(Z));
 
     // add Lya transitions to the fluorescence parameters
     flp.reserve(flp.size() + lap.size());
@@ -928,7 +932,14 @@ void XRayIonicGasMix::setupSelfBefore()
         {
             for (const auto& rs : rsp)
             {
-                if (ion.N == 1 && rs.Z == ion.Z) lyParams.push_back(rs);
+                if (ion.N == 1 && rs.Z == ion.Z)
+                {
+                    lyParams.push_back(rs);
+                    double a = rs.lamA / 4. / M_PI / _vtherm[ion.Z - 1];
+                    _aresv.push_back(a);
+                    _centerresv.push_back(rs.lam);
+                    _Zresv.push_back(rs.Z);
+                }
             }
         }
     }
@@ -936,10 +947,6 @@ void XRayIonicGasMix::setupSelfBefore()
     _numRes = lyParams.size();
 
     // ------------ thermal dispersion ------------
-
-    // calculate and store the thermal velocities corresponding to the scattering channels
-    _vtherm.resize(numAtoms, 0.);
-    for (int Z = 1; Z <= numAtoms; Z++) _vtherm[Z - 1] = sqrt(Constants::k() * temperature() / Atoms::mass(Z));
 
     // calculate the parameters for the sigmoid function approximating the convolution with a Gaussian
     // at the threshold energy for each cross section record, and store the result into a temporary vector;
@@ -1106,7 +1113,8 @@ void XRayIonicGasMix::setupSelfBefore()
         {
             const auto& rs = lyParams[s];
             double vth = _vtherm[rs.Z];
-            double section = LyUtils::section(vth, rs.a, rs.center, rs.g, lambda);
+            double a = rs.lamA / 4. / M_PI / vth;
+            double section = LyUtils::section(vth, a, rs.lam, rs.g, lambda);
             sections[2 * _numIons + _numFluo + s] = section;
         }
 
@@ -1192,7 +1200,7 @@ bool XRayIonicGasMix::hasLineEmission() const
 
 vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 {
-    return vector<StateVariable>{StateVariable::numberDensity(), StateVariable::temperature()};
+    return vector<StateVariable>{StateVariable::numberDensity()};
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1265,14 +1273,18 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
         {
             // Rayleigh or Compton scattering
             int i = scatinfo->species % _numIons;
-            scatinfo->velocity = _vthermscav[i] * random()->maxwell();
+            const auto& ion = _ionParams[i];
+            double vth = _vtherm[ion.Z - 1];
+            scatinfo->velocity = vth * random()->maxwell();
         }
         // Fluorescenct emission (scattering)
         else if (scatinfo->species < 2 * _numIons + _numFluo)
         {
             int i = scatinfo->species - 2 * _numIons;
+            const auto& ion = _ionParams[i];
+            double vth = _vtherm[ion.Z - 1];
 
-            if (temperature() > 0.) scatinfo->velocity = _vthermscav[i] * random()->maxwell();
+            if (temperature() > 0.) scatinfo->velocity = vth * random()->maxwell();
 
             if (_lambdafluov[i])
             {
@@ -1295,8 +1307,8 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
         else
         {
             int i = scatinfo->species - 2 * _numIons - _numIons;
-            const auto& ion = _ionParams[i];
-            double vth = M_SQRT2 * _vtherm[ion.Z - 1];
+            int Z = _Zresv[i];
+            double vth = M_SQRT2 * _vtherm[Z - 1];
             double a = _aresv[i];
             double center = _centerresv[i];
 
