@@ -986,16 +986,18 @@ void XRayIonicGasMix::setupSelfBefore()
     }
 
     // resonant scattering
+    _Zresv.resize(_numRes);
     _aresv.resize(_numRes);
     _centerresv.resize(_numRes);
-    _Zresv.resize(_numRes);
+    _J32resv.resize(_numRes);
     for (int s = 0; s != _numRes; ++s)
     {
         const auto& rs = lyParams[s];
         double a = rs.lamA / 4. / M_PI / vtherm(rs.Z);
+        _Zresv[s] = rs.Z;
         _aresv[s] = a;
         _centerresv[s] = rs.lam;
-        _Zresv[s] = rs.Z;
+        _J32resv[s] = rs.g == 2.;  // true if Lya1, Lyb1, ...
     }
 
     // ------------ thermal dispersion ------------
@@ -1357,9 +1359,11 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
             double vth = M_SQRT2 * vtherm(Z);
             double a = _aresv[r];
             double center = _centerresv[r];
+            double J32 = _J32resv[r];
 
-            std::tie(scatinfo->velocity, scatinfo->dipole) = LyUtils::sampleAtomVelocity(
-                vth, a, center, lambda, temperature(), state->numberDensity(), pp->direction(), config(), random());
+            std::tie(scatinfo->velocity, scatinfo->dipole) =
+                LyUtils::sampleAtomVelocity(vth, a, center, J32, lambda, temperature(), state->numberDensity(),
+                                            pp->direction(), config(), random());
         }
     }
 }

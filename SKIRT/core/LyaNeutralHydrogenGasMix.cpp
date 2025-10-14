@@ -170,8 +170,9 @@ void LyaNeutralHydrogenGasMix::peeloffScattering(double& I, double& Q, double& U
         scatinfo->valid = true;
         double vth = state->custom(0);
         double a = state->custom(1);
-        std::tie(scatinfo->velocity, scatinfo->dipole) = LyUtils::sampleAtomVelocity(
-            vth, a, center, lambda, state->temperature(), state->numberDensity(), pp->direction(), config(), random());
+        std::tie(scatinfo->velocity, scatinfo->dipole) =
+            LyUtils::sampleAtomVelocity(vth, a, center, true, lambda, state->temperature(), state->numberDensity(),
+                                        pp->direction(), config(), random());
     }
 
     // add the contribution to the Stokes vector components depending on scattering type
@@ -201,8 +202,9 @@ void LyaNeutralHydrogenGasMix::performScattering(double lambda, const MaterialSt
         scatinfo->valid = true;
         double vth = state->custom(0);
         double a = state->custom(1);
-        std::tie(scatinfo->velocity, scatinfo->dipole) = LyUtils::sampleAtomVelocity(
-            vth, a, center, lambda, state->temperature(), state->numberDensity(), pp->direction(), config(), random());
+        std::tie(scatinfo->velocity, scatinfo->dipole) =
+            LyUtils::sampleAtomVelocity(vth, a, center, true, lambda, state->temperature(), state->numberDensity(),
+                                        pp->direction(), config(), random());
     }
 
     // draw the outgoing direction from the dipole or the isotropic phase function

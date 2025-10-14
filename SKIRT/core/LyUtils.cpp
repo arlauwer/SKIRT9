@@ -46,8 +46,9 @@ double LyUtils::section(double vth, double a, double center, double g, double la
 
 ////////////////////////////////////////////////////////////////////
 
-std::pair<Vec, bool> LyUtils::sampleAtomVelocity(double vth, double a, double center, double lambda, double T,
-                                                 double nH, Direction kin, Configuration* config, Random* random)
+std::pair<Vec, bool> LyUtils::sampleAtomVelocity(double vth, double a, double center, double J32, double lambda,
+                                                 double T, double nH, Direction kin, Configuration* config,
+                                                 Random* random)
 {
     double x = (center - lambda) / lambda * c / vth;  // dimensionless frequency
 
@@ -93,7 +94,11 @@ std::pair<Vec, bool> LyUtils::sampleAtomVelocity(double vth, double a, double ce
     // select the isotropic or the dipole phase function:
     // all wing events and 1/3 of core events are dipole, and the remaining 2/3 core events are isotropic,
     // where x=0.2 (in the atom frame) defines the transition between core and wings
-    bool dipole = abs(x) > 0.2 || random->uniform() < 1. / 3.;
+    // bool dipole = abs(x) > 0.2 || random->uniform() < 1. / 3.;
+
+    // if J32 -> Lya1, Lyb1, ... -> 50/50   dipole/isotropic
+    // if J12 -> Lya2, Lyb2, ... -> 100     isotropic
+    bool dipole = J32 ? random->uniform() < 0.5 : false;
 
     // scale the atom velocity from dimensionless to regular units
     u *= vth;

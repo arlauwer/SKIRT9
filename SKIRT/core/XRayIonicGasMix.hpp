@@ -163,9 +163,10 @@ private:
     vector<int> _Zfluov;           // indexed on fluo
 
     // resonant scattering parameters for each of the Lyman transitions
+    vector<int> _Zresv;          // indexed on res
     vector<double> _aresv;       // indexed on res
     vector<double> _centerresv;  // indexed on res
-    vector<int> _Zresv;          // indexed on res
+    vector<bool> _J32resv;       // indexed on res
 
     // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
     //   - Rayleigh scattering by bound electrons for each atom
