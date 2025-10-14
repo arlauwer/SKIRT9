@@ -170,6 +170,7 @@ namespace
     struct LyParams
     {
         LyParams(const Array& a) : Z(a[0]), lamA(a[1]), lam(a[2]), g(a[3]) {}
+        int ionIndex{-1};
         int Z;
         double lamA;
         double lam;
@@ -862,6 +863,8 @@ void XRayIonicGasMix::setupSelfBefore()
             break;
     }
 
+    if (resonantScattering()) _dpf.initialize(random(), hasPolarizedScattering());
+
     // ------------ load resources ------------
 
     // photo-absorption
@@ -881,7 +884,7 @@ void XRayIonicGasMix::setupSelfBefore()
     // hydrogen-like lyman alpha2 yields
     StoredTable<2> lya2o(this, "Ionic_Lya_Y.stab", "Z(1),T(K)", "J12(1)");
 
-    // ------------ save required resources ------------
+    // ------------ save resources ------------
 
     // calculate and store the thermal velocities for each atomic number
     _vtherm.resize(numAtoms, 0.);
@@ -893,16 +896,26 @@ void XRayIonicGasMix::setupSelfBefore()
     {
         double Z = la.Z;
         double E = la.E;
-        // if DeltaJ=1 -> J=3/2 -> use Lya1 yield
-        double omega = la.DeltaJ ? lya1o((double)Z, temperature()) : lya2o((double)Z, temperature());
-        Array params = {Z, 1, 1, 0, omega, E, 0.};
+        // if DeltaJ=1 -> J=3/2 -> Lya1
+        // if DeltaJ=0 -> J=1/2 -> Lya2
+        double omega = la.DeltaJ ? lya1o(Z, temperature()) : lya2o(Z, temperature());
+        Array params = {Z, 1, 1, 0, omega, E, 0.};  // ensure order is correct here!
         flp.emplace_back(params);
     }
 
-    // link the photo-absorption and fluorescence parameters to the ions
+    // ------------ save ion parameters ------------
+
+    // parameters used in the setup
     vector<PhotoAbsorbParam> photoAbsorbParams;
     vector<FluorescenceParam> fluorescenceParams;
     vector<LyParams> lyParams;
+
+    // parameters used outside the setup
+    _lambdafluov.resize(_numFluo);
+    _centralfluov.resize(_numFluo);
+    _widthfluov.resize(_numFluo);
+
+    // save ion parameters
     for (int i = 0; i < _numIons; i++)
     {
         auto& ion = _ionParams[i];
@@ -928,23 +941,62 @@ void XRayIonicGasMix::setupSelfBefore()
             }
         }
 
-        if (resonantScattering())
+        // add Lyman scattering to this (hydrogen-like) ion
+        if (resonantScattering() && ion.N == 1)
         {
-            for (const auto& rs : rsp)
+            for (auto& rs : rsp)
             {
-                if (ion.N == 1 && rs.Z == ion.Z)
+                if (rs.Z == ion.Z)
                 {
+                    rs.ionIndex = i;
                     lyParams.push_back(rs);
-                    double a = rs.lamA / 4. / M_PI / _vtherm[ion.Z - 1];
-                    _aresv.push_back(a);
-                    _centerresv.push_back(rs.lam);
-                    _Zresv.push_back(rs.Z);
                 }
             }
         }
     }
     _numFluo = fluorescenceParams.size();
     _numRes = lyParams.size();
+
+    // ------------ calculate and store non-setup parameters ------------
+
+    // fluorescence
+    _lambdafluov.resize(_numFluo);
+    _centralfluov.resize(_numFluo);
+    _widthfluov.resize(_numFluo);
+    _Zfluov.resize(_numFluo);
+    for (int k = 0; k != _numFluo; ++k)
+    {
+        const auto& fl = fluorescenceParams[k];
+        const auto& pa = photoAbsorbParams[fl.paIndex];
+        const auto& ion = _ionParams[pa.ionIndex];
+
+        _Zfluov[k] = ion.Z;
+        if (!fl.W)
+        {
+            // if the line shape has zero width, convert the central enery to the fixed wavelength
+            _lambdafluov[k] = wavelengthToFromEnergy(fl.E);
+        }
+        else
+        {
+            // if the line shape has nonzero width, copy the parameters of the line shape
+            // so that we can sample from the Lorentz distribution in energy space
+            _centralfluov[k] = fl.E;
+            _widthfluov[k] = fl.W / 2.;  // convert from FWHM to HWHM
+        }
+    }
+
+    // resonant scattering
+    _aresv.resize(_numRes);
+    _centerresv.resize(_numRes);
+    _Zresv.resize(_numRes);
+    for (int s = 0; s != _numRes; ++s)
+    {
+        const auto& rs = lyParams[s];
+        double a = rs.lamA / 4. / M_PI / vtherm(rs.Z);
+        _aresv[s] = a;
+        _centerresv[s] = rs.lam;
+        _Zresv[s] = rs.Z;
+    }
 
     // ------------ thermal dispersion ------------
 
@@ -957,7 +1009,7 @@ void XRayIonicGasMix::setupSelfBefore()
     for (auto& pa : photoAbsorbParams)
     {
         auto& ion = _ionParams[pa.ionIndex];
-        pa.Es = pa.Eth * _vtherm[ion.Z - 1] / Constants::c();
+        pa.Es = pa.Eth * vtherm(ion.Z) / Constants::c();
         pa.sigmamax = pa.photoAbsorbSection(pa.Eth + 2. * pa.Es);
     }
 
@@ -1051,32 +1103,19 @@ void XRayIonicGasMix::setupSelfBefore()
             double E = wavelengthToFromEnergy(lambda);
             sigma += pa.photoAbsorbThermalSection(E) * _abundances[pa.ionIndex];
         }
+
+        // resonant scattering
+        for (const auto& rs : lyParams)
+        {
+            double vth = vtherm(rs.Z);
+            double a = rs.lamA / 4. / M_PI / vth;
+            sigma += LyUtils::section(vth, a, rs.lam, rs.g, lambda) * _abundances[rs.ionIndex];
+        }
+
         _sigmaextv[ell] = sigma;
     }
 
     // ------------ scattering ------------
-
-    // calculate and store the fluorescence emission parameters
-    int numFluos = fluorescenceParams.size();
-    _lambdafluov.resize(numFluos);
-    _centralfluov.resize(numFluos);
-    _widthfluov.resize(numFluos);
-    for (int k = 0; k != numFluos; ++k)
-    {
-        const auto& fl = fluorescenceParams[k];
-        if (!fl.W)
-        {
-            // if the line shape has zero width, convert the central enery to the fixed wavelength
-            _lambdafluov[k] = wavelengthToFromEnergy(fl.E);
-        }
-        else
-        {
-            // if the line shape has nonzero width, copy the parameters of the line shape
-            // so that we can sample from the Lorentz distribution in energy space
-            _centralfluov[k] = fl.E;
-            _widthfluov[k] = fl.W / 2.;  // convert from FWHM to HWHM
-        }
-    }
 
     // make room for the scattering cross section and the cumulative fluorescence/scattering probabilities
     _sigmascav.resize(numLambda);
@@ -1112,9 +1151,9 @@ void XRayIonicGasMix::setupSelfBefore()
         for (int s = 0; s < _numRes; s++)
         {
             const auto& rs = lyParams[s];
-            double vth = _vtherm[rs.Z];
+            double vth = vtherm(rs.Z);
             double a = rs.lamA / 4. / M_PI / vth;
-            double section = LyUtils::section(vth, a, rs.lam, rs.g, lambda);
+            double section = LyUtils::section(vth, a, rs.lam, rs.g, lambda) * _abundances[rs.ionIndex];
             sections[2 * _numIons + _numFluo + s] = section;
         }
 
@@ -1152,6 +1191,13 @@ XRayIonicGasMix::~XRayIonicGasMix()
 int XRayIonicGasMix::indexForLambda(double lambda) const
 {
     return NR::locateClip(_lambdav, lambda);
+}
+
+////////////////////////////////////////////////////////////////////
+
+double XRayIonicGasMix::vtherm(int Z) const
+{
+    return _vtherm[Z - 1];
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1274,22 +1320,22 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
             // Rayleigh or Compton scattering
             int i = scatinfo->species % _numIons;
             const auto& ion = _ionParams[i];
-            double vth = _vtherm[ion.Z - 1];
+            double vth = vtherm(ion.Z);
             scatinfo->velocity = vth * random()->maxwell();
         }
         // Fluorescenct emission (scattering)
         else if (scatinfo->species < 2 * _numIons + _numFluo)
         {
-            int i = scatinfo->species - 2 * _numIons;
-            const auto& ion = _ionParams[i];
-            double vth = _vtherm[ion.Z - 1];
+            int k = scatinfo->species - 2 * _numIons;
+            int Z = _Zfluov[k];
+            double vth = vtherm(Z);
 
             if (temperature() > 0.) scatinfo->velocity = vth * random()->maxwell();
 
-            if (_lambdafluov[i])
+            if (_lambdafluov[k])
             {
                 // for a zero-width line, simply copy the central wavelength
-                scatinfo->lambda = _lambdafluov[i];
+                scatinfo->lambda = _lambdafluov[k];
             }
             else
             {
@@ -1298,7 +1344,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
                 // therefore we loop until the sampled wavelength is meaningful
                 while (true)
                 {
-                    scatinfo->lambda = wavelengthToFromEnergy(_centralfluov[i] + _widthfluov[i] * random()->lorentz());
+                    scatinfo->lambda = wavelengthToFromEnergy(_centralfluov[k] + _widthfluov[k] * random()->lorentz());
                     if (nonZeroRange.contains(scatinfo->lambda)) break;
                 }
             }
@@ -1306,11 +1352,11 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
         // Resonant Lyman scattering
         else
         {
-            int i = scatinfo->species - 2 * _numIons - _numIons;
-            int Z = _Zresv[i];
-            double vth = M_SQRT2 * _vtherm[Z - 1];
-            double a = _aresv[i];
-            double center = _centerresv[i];
+            int r = scatinfo->species - 2 * _numIons - _numFluo;
+            int Z = _Zresv[r];
+            double vth = M_SQRT2 * vtherm(Z);
+            double a = _aresv[r];
+            double center = _centerresv[r];
 
             std::tie(scatinfo->velocity, scatinfo->dipole) = LyUtils::sampleAtomVelocity(
                 vth, a, center, lambda, temperature(), state->numberDensity(), pp->direction(), config(), random());
@@ -1334,28 +1380,50 @@ void XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     // Rayleigh scattering in electron rest frame; no support for polarization
     if (scatinfo->species < static_cast<int>(_numIons))
     {
-        _ray->peeloffScattering(I, lambda, scatinfo->species + 1, pp->direction(), bfkobs);
+        int i = scatinfo->species;
+        const auto& ion = _ionParams[i];
+        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
+        _ray->peeloffScattering(I, lambda, ion.Z, pp->direction(), bfkobs);
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
     }
 
     // Compton scattering in electron rest frame; with support for polarization if enabled
     else if (scatinfo->species < static_cast<int>(2 * _numIons))
     {
-        _com->peeloffScattering(I, Q, U, V, lambda, scatinfo->species - _numIons + 1, pp->direction(), bfkobs, bfky,
-                                pp);
+        int i = scatinfo->species - _numIons;
+        const auto& ion = _ionParams[i];
+        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
+        _com->peeloffScattering(I, Q, U, V, lambda, ion.Z, pp->direction(), bfkobs, bfky, pp);
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
     }
 
     // fluorescence
-    else
+    else if (scatinfo->species < static_cast<int>(2 * _numIons + _numFluo))
     {
         // unpolarized isotropic emission; the bias weight is trivially 1 and there is no contribution to Q, U, V
         I = 1.;
 
         // update the photon packet wavelength to the (possibly sampled) wavelength of this fluorescence transition
         lambda = scatinfo->lambda;
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
     }
+    else
+    {
+        // add the contribution to the Stokes vector components depending on scattering type
+        if (scatinfo->dipole)
+        {
+            // contribution of dipole scattering with or without polarization
+            _dpf.peeloffScattering(I, Q, U, V, pp->direction(), bfkobs, bfky, pp);
+        }
+        else
+        {
+            // isotropic scattering removes polarization, so the contribution is trivially 1
+            I += 1.;
+        }
 
-    // if we have dispersion, Doppler-shift the outgoing wavelength from the electron rest frame
-    if (temperature() > 0.) lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
+        // Doppler-shift the photon packet wavelength into and out of the atom frame
+        lambda = LyUtils::shiftWavelength(lambda, scatinfo->velocity, pp->direction(), bfkobs);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1366,41 +1434,58 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
     setScatteringInfoIfNeeded(const_cast<PhotonPacket*>(pp), state, lambda);
     auto scatinfo = const_cast<PhotonPacket*>(pp)->getScatteringInfo();
 
-    // if we have dispersion, for electron scattering, adjust the incoming wavelength to the electron rest frame
-    if (temperature() > 0. && scatinfo->species < static_cast<int>(2 * _numIons))
-        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
-
     // room for the outgoing direction
     Direction bfknew;
 
     // Rayleigh scattering, no support for polarization: determine the new propagation direction
     if (scatinfo->species < static_cast<int>(_numIons))
     {
-        bfknew = _ray->performScattering(lambda, scatinfo->species + 1, pp->direction());
+        int i = scatinfo->species;
+        const auto& ion = _ionParams[i];
+        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
+        bfknew = _ray->performScattering(lambda, ion.Z, pp->direction());
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
     }
 
     // Compton scattering, with support for polarization if enabled:
     // determine the new propagation direction and wavelength, and if polarized, update the stokes vector
     else if (scatinfo->species < static_cast<int>(2 * _numIons))
     {
-        bfknew = _com->performScattering(lambda, scatinfo->species - _numIons + 1, pp->direction(), pp);
+        int i = scatinfo->species - _numIons;
+        const auto& ion = _ionParams[i];
+        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
+        bfknew = _com->performScattering(lambda, ion.Z, pp->direction(), pp);
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
     }
 
     // fluorescence, always unpolarized and isotropic
-    else
+    else if (scatinfo->species < static_cast<int>(2 * _numIons + _numFluo))
     {
-        // update the photon packet wavelength to the (possibly sampled) wavelength of this fluorescence transition
-        lambda = scatinfo->lambda;
-
-        // draw a random, isotropic outgoing direction
-        bfknew = random()->direction();
-
         // clear the stokes vector (only relevant if polarization support is enabled)
         pp->setUnpolarized();
-    }
 
-    // if we have dispersion, Doppler-shift the outgoing wavelength from the electron rest frame
-    if (temperature() > 0.) lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
+        // update the photon packet wavelength to the (possibly sampled) wavelength of this fluorescence transition
+        lambda = scatinfo->lambda;
+        bfknew = random()->direction();
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
+    }
+    else
+    {
+        // draw the outgoing direction from the dipole or the isotropic phase function
+        // and, if required, update the polarization state of the photon packet
+        if (scatinfo->dipole)
+        {
+            bfknew = _dpf.performScattering(pp->direction(), pp);
+        }
+        else
+        {
+            bfknew = random()->direction();
+            if (hasPolarizedScattering()) pp->setUnpolarized();
+        }
+
+        // Doppler-shift the photon packet wavelength into and out of the atom frame
+        lambda = LyUtils::shiftWavelength(lambda, scatinfo->velocity, pp->direction(), bfknew);
+    }
 
     // execute the scattering event in the photon packet
     pp->scatter(bfknew, state->bulkVelocity(), lambda);

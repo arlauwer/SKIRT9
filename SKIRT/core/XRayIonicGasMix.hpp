@@ -7,6 +7,7 @@
 #define XRAYIONICGASMIX_HPP
 
 #include "ArrayTable.hpp"
+#include "DipolePhaseFunction.hpp"
 #include "EmittingGasMix.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
@@ -66,6 +67,8 @@ private:
     specified wavelength. The parameters for converting a wavelength to the appropriate index
     are stored in data members during setup. */
     int indexForLambda(double lambda) const;
+
+    double vtherm(int Z) const;
 
     //============= Capabilities =============
 
@@ -157,6 +160,7 @@ private:
     vector<double> _lambdafluov;   // indexed on fluo
     vector<double> _centralfluov;  // indexed on fluo
     vector<double> _widthfluov;    // indexed on fluo
+    vector<int> _Zfluov;           // indexed on fluo
 
     // resonant scattering parameters for each of the Lyman transitions
     vector<double> _aresv;       // indexed on res
@@ -174,6 +178,8 @@ private:
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
+
+    DipolePhaseFunction _dpf;
 };
 
 #endif
