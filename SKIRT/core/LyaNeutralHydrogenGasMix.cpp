@@ -16,11 +16,11 @@
 namespace
 {
     // the combined Lya1 and Lya2 for hydrogen
-    constexpr int Z = 1;
     constexpr double lyaA = Constants::EinsteinALya();
-    constexpr double center = Constants::lambdaLya();
+    constexpr double lya = Constants::lambdaLya();
     constexpr double g = 3.;
-    constexpr double m = Constants::Mproton();
+    constexpr double kB = Constants::k();
+    constexpr double mp = Constants::Mproton();
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -30,7 +30,6 @@ void LyaNeutralHydrogenGasMix::setupSelfBefore()
     MaterialMix::setupSelfBefore();
 
     _dpf.initialize(random(), includePolarization());
-    _vth = LyUtils::vtherm(defaultTemperature(), m);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -72,10 +71,7 @@ bool LyaNeutralHydrogenGasMix::hasScatteringDispersion() const
 
 vector<StateVariable> LyaNeutralHydrogenGasMix::specificStateVariableInfo() const
 {
-    vector<StateVariable> result = {StateVariable::numberDensity(), StateVariable::temperature()};
-    result.push_back(StateVariable::custom(0, "thermal velocity", "velocity"));
-    result.push_back(StateVariable::custom(0, "voigt parameter", ""));
-    return result;
+    return vector<StateVariable>{StateVariable::numberDensity(), StateVariable::temperature()};
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -91,11 +87,6 @@ void LyaNeutralHydrogenGasMix::initializeSpecificState(MaterialState* state, dou
 
         // make sure the temperature is at least the local universe CMB temperature
         state->setTemperature(max(Constants::Tcmb(), temperature));
-
-        double vth = LyUtils::vtherm(temperature, m);
-        double a = lyaA * center / 4. / M_PI / vth;
-        state->setCustom(0, vth);
-        state->setCustom(1, a);
     }
 }
 
@@ -104,6 +95,28 @@ void LyaNeutralHydrogenGasMix::initializeSpecificState(MaterialState* state, dou
 double LyaNeutralHydrogenGasMix::mass() const
 {
     return Constants::Mproton();
+}
+
+////////////////////////////////////////////////////////////////////
+
+double LyaNeutralHydrogenGasMix::section(double lambda, double T) const
+{
+    double vth = sqrt(2. * kB / mp * T);
+    double a = lyaA * lya / 4. / M_PI / vth;
+    return LyUtils::section(vth, a, lya, g, lambda);
+}
+
+std::pair<Vec, bool> LyaNeutralHydrogenGasMix::sampleAtomVelocity(double lambda, double T, double nH, Direction kin,
+                                                                  Configuration* config, Random* random) const
+{
+    double vth = sqrt(2. * kB / mp * T);
+    double a = lyaA * lya / 4. / M_PI / vth;
+
+    // change true to actual probability
+    // use Lya1 Lya2 opacities to determine probability then use Lya1 = 50/50 & Lya2 = 100
+    // this should be a constant so just precalculate it
+
+    return LyUtils::sampleAtomVelocity(vth, a, lya, true, lambda, T, nH, kin, config, random);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -117,16 +130,14 @@ double LyaNeutralHydrogenGasMix::sectionAbs(double /*lambda*/) const
 
 double LyaNeutralHydrogenGasMix::sectionSca(double lambda) const
 {
-    double a = lyaA * center / 4. / M_PI / _vth;
-    return LyUtils::section(_vth, a, center, g, lambda);
+    return section(lambda, defaultTemperature());
 }
 
 ////////////////////////////////////////////////////////////////////
 
 double LyaNeutralHydrogenGasMix::sectionExt(double lambda) const
 {
-    double a = lyaA * center / 4. / M_PI / _vth;
-    return LyUtils::section(_vth, a, center, g, lambda);
+    return section(lambda, defaultTemperature());
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -142,9 +153,7 @@ double LyaNeutralHydrogenGasMix::opacityAbs(double /*lambda*/, const MaterialSta
 double LyaNeutralHydrogenGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     double n = state->numberDensity();
-    double vth = state->custom(0);
-    double a = state->custom(1);
-    return n > 0. ? n * LyUtils::section(vth, a, center, g, lambda) : 0.;
+    return n > 0. ? n * section(lambda, state->temperature()) : 0.;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -152,9 +161,7 @@ double LyaNeutralHydrogenGasMix::opacitySca(double lambda, const MaterialState* 
 double LyaNeutralHydrogenGasMix::opacityExt(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     double n = state->numberDensity();
-    double vth = state->custom(0);
-    double a = state->custom(1);
-    return n > 0. ? n * LyUtils::section(vth, a, center, g, lambda) : 0.;
+    return n > 0. ? n * section(lambda, state->temperature()) : 0.;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -168,11 +175,8 @@ void LyaNeutralHydrogenGasMix::peeloffScattering(double& I, double& Q, double& U
     if (!scatinfo->valid)
     {
         scatinfo->valid = true;
-        double vth = state->custom(0);
-        double a = state->custom(1);
-        std::tie(scatinfo->velocity, scatinfo->dipole) =
-            LyUtils::sampleAtomVelocity(vth, a, center, true, lambda, state->temperature(), state->numberDensity(),
-                                        pp->direction(), config(), random());
+        std::tie(scatinfo->velocity, scatinfo->dipole) = sampleAtomVelocity(
+            lambda, state->temperature(), state->numberDensity(), pp->direction(), config(), random());
     }
 
     // add the contribution to the Stokes vector components depending on scattering type
@@ -200,11 +204,8 @@ void LyaNeutralHydrogenGasMix::performScattering(double lambda, const MaterialSt
     if (!scatinfo->valid)
     {
         scatinfo->valid = true;
-        double vth = state->custom(0);
-        double a = state->custom(1);
-        std::tie(scatinfo->velocity, scatinfo->dipole) =
-            LyUtils::sampleAtomVelocity(vth, a, center, true, lambda, state->temperature(), state->numberDensity(),
-                                        pp->direction(), config(), random());
+        std::tie(scatinfo->velocity, scatinfo->dipole) = sampleAtomVelocity(
+            lambda, state->temperature(), state->numberDensity(), pp->direction(), config(), random());
     }
 
     // draw the outgoing direction from the dipole or the isotropic phase function

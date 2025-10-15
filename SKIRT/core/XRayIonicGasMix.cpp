@@ -993,7 +993,8 @@ void XRayIonicGasMix::setupSelfBefore()
     for (int s = 0; s != _numRes; ++s)
     {
         const auto& rs = lyParams[s];
-        double a = rs.lamA / 4. / M_PI / vtherm(rs.Z);
+        double vth = M_SQRT2 * vtherm(rs.Z);
+        double a = rs.lamA / 4. / M_PI / vth;
         _Zresv[s] = rs.Z;
         _aresv[s] = a;
         _centerresv[s] = rs.lam;
@@ -1109,7 +1110,7 @@ void XRayIonicGasMix::setupSelfBefore()
         // resonant scattering
         for (const auto& rs : lyParams)
         {
-            double vth = vtherm(rs.Z);
+            double vth = M_SQRT2 * vtherm(rs.Z);
             double a = rs.lamA / 4. / M_PI / vth;
             sigma += LyUtils::section(vth, a, rs.lam, rs.g, lambda) * _abundances[rs.ionIndex];
         }
@@ -1153,7 +1154,7 @@ void XRayIonicGasMix::setupSelfBefore()
         for (int s = 0; s < _numRes; s++)
         {
             const auto& rs = lyParams[s];
-            double vth = vtherm(rs.Z);
+            double vth = M_SQRT2 * vtherm(rs.Z);
             double a = rs.lamA / 4. / M_PI / vth;
             double section = LyUtils::section(vth, a, rs.lam, rs.g, lambda) * _abundances[rs.ionIndex];
             sections[2 * _numIons + _numFluo + s] = section;

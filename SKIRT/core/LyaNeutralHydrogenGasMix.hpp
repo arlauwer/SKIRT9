@@ -100,6 +100,12 @@ public:
 
     //======== Low-level material properties =======
 
+private:
+    double section(double lambda, double T) const;
+
+    std::pair<Vec, bool> sampleAtomVelocity(double lambda, double T, double nH, Direction kin, Configuration* config,
+                                            Random* random) const;
+
 public:
     /** This function returns the mass of neutral hydrogen atom. */
     double mass() const override;
@@ -171,7 +177,6 @@ public:
 private:
     // the dipole phase function helper instance - initialized during setup
     DipolePhaseFunction _dpf;
-    double _vth;  // default thermal velocity
 };
 
 ////////////////////////////////////////////////////////////////////
