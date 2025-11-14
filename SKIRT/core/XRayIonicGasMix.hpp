@@ -7,6 +7,7 @@
 #define XRAYIONICGASMIX_HPP
 
 #include "ArrayTable.hpp"
+#include "CloudyWrapper.hpp"
 #include "EmittingGasMix.hpp"
 #include "Log.hpp"
 #include "MaterialMix.hpp"
@@ -14,9 +15,6 @@
 #include "SnapshotParameter.hpp"
 #include "StoredTable.hpp"
 #include "TextInFile.hpp"
-
-// The amount of bins in the radiation field (these should match the Cloudy table)
-static constexpr int radBins = 8;
 
 ////////////////////////////////////////////////////////////////////
 
@@ -84,7 +82,7 @@ public:
                                   MaterialState* previousAggregate) const override;
 
 private:
-    double updateState(MaterialState* state, double n, double Z, const Array& J) const;
+    double updateState(MaterialState* state, double n, double Z, const Array& J);
 
     //============= Low-level material properties =============
 
@@ -163,11 +161,11 @@ private:
     int _indexEmissivity;       // index of the emissivity in the custom state variables
 
     // shared variables //
-    int _numLambdaOpac;
-    Array _lambdaOpac;
+    int _numLambda;
+    Array _lambda;
 
-    int _numLambdaEmis;
-    Array _lambdaEmis;
+    // int _numLambdaEmis;
+    // Array _lambdaEmis;
     DisjointWavelengthGrid* _emissionGrid{nullptr};  // grid for emission
 
     // bound-electron scattering helpers depending on the configured implementation
@@ -178,16 +176,7 @@ private:
     // Meaning that if you set the density in SKIRT (mix.txt) to 1e4, it will be the hden in Cloudy!
     // the sum of the H abundances: H, H+ (H+ not present in SKIRT yet?), (molecules currently turned off) will be 1e4
 
-    // Axes:                density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
-    StoredTable<2 + radBins> _temperatureTable;  // temperature (K)
-    // Axes: ions (1),      density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
-    StoredTable<3 + radBins> _abundanceTable;  // abundances (1/m3)
-    // Axes: wavelength(m), density(1/m3), metallicity(1), bin0(W/m2), bin1(W/m2)
-    StoredTable<3 + radBins> _opacityTable;     // absorption opacity (1/m)
-    StoredTable<3 + radBins> _emissivityTable;  // emissivity (W/m3)
-
-    std::array<double, radBins> _minBins;
-    std::array<double, radBins> _maxBins;
+    CloudyWrapper _cloudyWrapper;
 };
 
 #endif

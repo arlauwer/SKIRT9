@@ -68,6 +68,7 @@ SkirtUnitDef::SkirtUnitDef()
     addUnit("wavelength", "keV", 1e-3 * hc / Qel, -1.);
     addUnit("wavelength", "MeV", 1e-6 * hc / Qel, -1.);
     addUnit("wavelength", "GeV", 1e-9 * hc / Qel, -1.);
+    addUnit("wavelength", "Ryd", hc / (13.605703976 * Qel), -1.);
 
     // wavelength-style wavelength
     addUnit("wavelengthwavelength", "m", 1.);

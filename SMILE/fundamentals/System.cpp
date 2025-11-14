@@ -425,6 +425,17 @@ string System::prompt(string message)
 
 ////////////////////////////////////////////////////////////////////
 
+int System::execute(string command)
+{
+#ifdef _WIN64
+    return _wsystem(toUTF16(command).get());  // not sure if this is correct
+#else
+    return std::system(command.c_str());
+#endif
+}
+
+////////////////////////////////////////////////////////////////////
+
 std::ifstream System::ifstream(string path)
 {
 #ifdef _WIN64

@@ -100,6 +100,9 @@ public:
         message. */
     static string prompt(string message);
 
+    /** This function executes the specified command line and returns the exit code of the command. */
+    static int execute(string command);
+
     // ================== File System ==================
 
     /** This function returns an input file stream opened on the specified file path. On Windows
