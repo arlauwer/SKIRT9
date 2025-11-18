@@ -6,14 +6,11 @@
 #ifndef XRAYIONICGASMIX_HPP
 #define XRAYIONICGASMIX_HPP
 
-#include "ArrayTable.hpp"
 #include "CloudyWrapper.hpp"
 #include "EmittingGasMix.hpp"
 #include "Log.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
-#include "SnapshotParameter.hpp"
-#include "StoredTable.hpp"
 #include "TextInFile.hpp"
 
 ////////////////////////////////////////////////////////////////////

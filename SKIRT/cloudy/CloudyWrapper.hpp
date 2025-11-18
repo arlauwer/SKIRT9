@@ -3,7 +3,7 @@
 
 #include "Cloudy.hpp"
 #include <atomic>
-#include <memory>
+#include <unordered_map>
 
 namespace hnswlib
 {
@@ -20,16 +20,23 @@ public:
 
     CloudyData query(double hden, double metallicity, const Array& radField);
 
+    void save();
+
+    void load();
+
 private:
-    Cloudy perform(double hden, double metallicity, const Array& radField);
+    CloudyData perform(double hden, double metallicity, const Array& radField);
 
     // we need to make this thread safe somehow.
     // For a single materialmix this is easily done by making the uid atomic.
     // But for multiple mixes, not sure? Make it static?
     static std::atomic<int> _next_uid;
+    static std::atomic<int> _next_label;
 
     string _basePath;
     string _runsPath;
+    string _hnswPath;
+    string _cloudyDir;
 
     string _template;
 
@@ -38,9 +45,8 @@ private:
     size_t _max_elements{1000};  // set this properly!
     int _M{16};
     int _ef_const{100};
-    int _k{10};
+    size_t _k{1};
 
-    float** _points;
     hnswlib::L2Space* _space;
     hnswlib::HierarchicalNSW<float>* _hnsw;
 
@@ -48,7 +54,7 @@ private:
 
     // cloudy
     Array _lambda;
-    vector<Cloudy> _cloudys;
+    std::unordered_map<size_t, CloudyData> _cloudys;
 };
 
 #endif

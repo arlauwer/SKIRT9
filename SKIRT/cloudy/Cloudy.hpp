@@ -4,11 +4,12 @@
 #include "Array.hpp"
 #include "NR.hpp"
 #include <array>
+#include <iostream>
 
 namespace cloudy
 {
-    constexpr int numBins = 4;
-    constexpr std::array<double, 5> edges{1e0, 1e1, 1e2, 1e3, 1e4};
+    constexpr int numBins = 1;
+    constexpr std::array<double, 5> edges{1e0, 1e4};
     constexpr int numIons = 465;
 }
 
@@ -39,6 +40,39 @@ public:
     Array abundances;
     Array opacities;
     Array emissivities;
+
+    friend std::ostream& operator<<(std::ostream& out, const CloudyData& data)
+    {
+        out << data.abundances.size() << '\n';
+        out << data.opacities.size() << '\n';
+        out << data.emissivities.size() << '\n';
+
+        out << data.temperature << '\n';
+        for (auto& abundance : data.abundances) out << abundance << '\n';
+        for (auto& opacity : data.opacities) out << opacity << '\n';
+        for (auto& emissivity : data.emissivities) out << emissivity << '\n';
+        return out;
+    }
+
+    friend std::istream& operator>>(std::istream& in, CloudyData& data)
+    {
+        int numAbundances;
+        int numOpacities;
+        int numEmissivities;
+        in >> numAbundances;
+        in >> numOpacities;
+        in >> numEmissivities;
+
+        data.abundances.resize(numAbundances);
+        data.opacities.resize(numOpacities);
+        data.emissivities.resize(numEmissivities);
+
+        in >> data.temperature;
+        for (auto& abundance : data.abundances) in >> abundance;
+        for (auto& opacity : data.opacities) in >> opacity;
+        for (auto& emissivity : data.emissivities) in >> emissivity;
+        return in;
+    }
 };
 
 class Cloudy

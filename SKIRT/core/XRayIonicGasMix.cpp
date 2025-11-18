@@ -25,7 +25,6 @@ namespace
 {
     // ---- common helper functions ---- //
 
-    constexpr double defaultTemperature = 1.;
     constexpr double defaultMetallicity = 0.;
 
     constexpr int numAtoms = 30;  // H to Zn
@@ -89,9 +88,6 @@ namespace
 
     // wavelength range over which our cross sections may be nonzero
     // constexpr Range nonZeroRange(wavelengthToFromEnergy(500e3), wavelengthToFromEnergy(4.3));
-
-    // number of wavelengths per dex in high-resolution grid
-    constexpr size_t numWavelengthsPerDex = 2500;
 
     // discretization of the phase function over scattering angle: theta from 0 to pi, index t
     constexpr size_t numTheta = 361;
@@ -965,8 +961,8 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     Array radWidth = config()->radiationFieldWLG()->dlambdav();
 
     // Lookup table values
-    Array J = Jv * radWidth * 4. * M_PI;       // W/m2/m/sr -> W/m2 (integrated mean intensity)
-    double n = state->numberDensity() * 1e-6;  // 1/m3 -> 1/cm3
+    Array J = Jv * radWidth * 4. * M_PI;  // W/m2/m/sr -> W/m2 (integrated mean intensity)
+    double n = state->numberDensity();    // 1/m3 -> 1/cm3
     double Z = state->metallicity();
 
     double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
