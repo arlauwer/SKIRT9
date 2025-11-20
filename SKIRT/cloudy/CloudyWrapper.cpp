@@ -3,11 +3,45 @@
 #include "StringUtils.hpp"
 #include "System.hpp"
 #include "hnswlib.h"
+#include "space_cloudy.h"
 #include <atomic>
+#include <cmath>
 #include <sstream>
 
 std::atomic<int> CloudyWrapper::_next_uid{0};
 std::atomic<int> CloudyWrapper::_next_label{0};
+
+namespace
+{
+    double hden_factor = 1e0;
+    double metallicity_factor = 1e0;
+    double rad_factor = 1e0;
+
+    // cloudy distance function
+    static double Cloudy_dist(const void* pVect1v, const void* pVect2v, const void* /*qty_ptr*/)
+    {
+        double* pVect1 = (double*)pVect1v;
+        double* pVect2 = (double*)pVect2v;
+        // size_t qty = *((size_t*)qty_ptr);
+
+        double res = 0;
+        res += hden_factor * std::abs(std::log10(*pVect1 / *pVect2));
+        pVect1++;
+        pVect2++;
+
+        res += metallicity_factor * std::abs(std::log10(*pVect1 / *pVect2));
+        pVect1++;
+        pVect2++;
+
+        for (size_t i = 0; i < cloudy::numBins; i++)
+        {
+            if (*pVect1 != 0 && *pVect2 != 0) res += rad_factor * std::abs(std::log10(*pVect1 / *pVect2));
+            pVect1++;
+            pVect2++;
+        }
+        return res;
+    }
+}
 
 CloudyWrapper::~CloudyWrapper()
 {
@@ -41,7 +75,7 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
     in.close();
     _template = ss.str();
 
-    _space = new hnswlib::L2Space(_dim);
+    _space = new hnswlib::CloudySpace(_dim, Cloudy_dist);
     _hnswPath = StringUtils::joinPaths(_basePath, "hnsw.bin");
     _cloudyDir = StringUtils::joinPaths(_basePath, "cloudy");
     System::makeDir(_cloudyDir);
@@ -55,13 +89,13 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
     if (radField.size() != cloudy::numBins) throw FATALERROR("CloudyWrapper::query: wrong number of radfield values");
 
     // create query point
-    vector<float> point(_dim);
+    vector<double> point(_dim);
     point[0] = hden;
     point[1] = metallicity;
     for (int i = 0; i < cloudy::numBins; i++) point[2 + i] = radField[i];
 
     // do knn search
-    vector<std::pair<float, hnswlib::labeltype>> knn = _hnsw->searchKnnCloserFirst(point.data(), _k);
+    vector<std::pair<double, hnswlib::labeltype>> knn = _hnsw->searchKnnCloserFirst(point.data(), _k);
 
     // check if further than max distance
     if (knn.size() != _k || knn[_k - 1].first > _max_dist)
@@ -69,24 +103,28 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
         // add new point
         CloudyData data = perform(hden, metallicity, radField);
         int label = _next_label++;
+
+        // lock
+        std::unique_lock<std::mutex> lock(_mutex);
+
         _hnsw->addPoint(point.data(), label);
         _cloudys[label] = data;
 
         ////// debug comparison of nn and point //////
-        if (knn.size() > 0)
-        {
-            size_t label = knn[0].second;
+        // if (knn.size() > 0)
+        // {
+        //     size_t label = knn[0].second;
 
-            vector<float> input1 = _hnsw->getDataByLabel<float>(label);
-            vector<float> input2 = point;
+        //     vector<double> input1 = _hnsw->getDataByLabel<double>(label);
+        //     vector<double> input2 = point;
 
-            auto it = _cloudys.find(label);
-            if (it != _cloudys.end())
-            {
-                CloudyData output1 = data;
-                CloudyData output2 = it->second;
-            }
-        }
+        //     auto it = _cloudys.find(label);
+        //     if (it != _cloudys.end())
+        //     {
+        //         CloudyData output1 = data;
+        //         CloudyData output2 = it->second;
+        //     }
+        // }
         /////////////////////////////////////////////
 
         return data;
@@ -102,12 +140,12 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
         // interpolate
         // CloudyData data;
 
-        // float total_dist = 0.f;
+        // double total_dist = 0.f;
         // for (auto& pair : knn) total_dist += pair.first;
 
         // for (auto& pair : knn)
         // {
-        //     float weight = pair.first / total_dist;
+        //     double weight = pair.first / total_dist;
         //     int id = pair.second;
 
         //     // interpolate using dist
@@ -143,9 +181,9 @@ void CloudyWrapper::load()
 {
     // load hnsw
     if (System::isFile(_hnswPath))
-        _hnsw = new hnswlib::HierarchicalNSW<float>(_space, _hnswPath);
+        _hnsw = new hnswlib::HierarchicalNSW<double>(_space, _hnswPath);
     else
-        _hnsw = new hnswlib::HierarchicalNSW<float>(_space, _max_elements, _M, _ef_const);
+        _hnsw = new hnswlib::HierarchicalNSW<double>(_space, _max_elements, _M, _ef_const);
 
     // load cloudy
     for (auto& file : System::filesInDirectory(_cloudyDir))

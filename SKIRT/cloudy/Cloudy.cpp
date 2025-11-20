@@ -63,11 +63,11 @@ void Cloudy::setup()
         double ryd2 = cloudy::edges[i + 1] * 0.9999;
         double lam1 = 9.112662439164599e-08 / ryd1;  // hc / Q / lam / 13.6
         double lam2 = 9.112662439164599e-08 / ryd2;
-        double rad = max(_radField[i], 1e-10); // to avoid 0
+        double rad = max(_radField[i], cloudy::minRad);                  // to avoid 0
         double Jnu1 = rad / (4. * M_PI * Constants::c()) * lam1 * lam1;  // same radBin, different lambda
         double Jnu2 = rad / (4. * M_PI * Constants::c()) * lam2 * lam2;  // same radBin, different lambda
-        sed << ryd1 << "\t" << Jnu1 << std::endl;                                 // left
-        sed << ryd2 << "\t" << Jnu2 << std::endl;                                 // right
+        sed << ryd1 << "\t" << Jnu1 << std::endl;                        // left
+        sed << ryd2 << "\t" << Jnu2 << std::endl;                        // right
     }
 
     sed.close();
@@ -120,9 +120,9 @@ void Cloudy::read()
     std::ifstream opac = System::ifstream(StringUtils::joinPaths(_path, "sim.opac"));
     getline(opac, header);  // skip header
     std::vector<double> opacities;
-    for (int i=0; getline(opac, line); i++)
+    for (int i = 0; getline(opac, line); i++)
     {
-        if (i <  5884 || i > 9024) continue;
+        if (i < 5884 || i > 9024) continue;
 
         auto cols = StringUtils::split(line, "\t");
         if (cols.size() < 2) continue;
@@ -135,9 +135,9 @@ void Cloudy::read()
     std::ifstream emis = System::ifstream(StringUtils::joinPaths(_path, "sim.con"));
     getline(emis, header);  // skip header
     std::vector<double> emissivities;
-    for (int i=0; getline(emis, line); i++)
+    for (int i = 0; getline(emis, line); i++)
     {
-        if (i <  5884 || i > 9024) continue;
+        if (i < 5884 || i > 9024) continue;
 
         auto cols = StringUtils::split(line, "\t");
         if (cols.size() < 3) continue;

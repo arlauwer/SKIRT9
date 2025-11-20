@@ -946,8 +946,7 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, do
 
     int numBins = config()->radiationFieldWLG()->numBins();
     Array J(numBins);
-    J = 0;  // temporary really high for now
-    // can't be too high because hnsw uses float!!!
+    J = 1e30;  // temporary really high for now
 
     const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
 }

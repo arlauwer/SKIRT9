@@ -11,6 +11,7 @@ namespace cloudy
     constexpr int numBins = 1;
     constexpr std::array<double, 5> edges{1e0, 1e4};
     constexpr int numIons = 465;
+    constexpr double minRad = 1e-10;
 }
 
 class CloudyData

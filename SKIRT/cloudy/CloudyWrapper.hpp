@@ -3,11 +3,12 @@
 
 #include "Cloudy.hpp"
 #include <atomic>
+#include <mutex>
 #include <unordered_map>
 
 namespace hnswlib
 {
-    class L2Space;
+    class CloudySpace;  // distance space for Cloudy
     template<typename T> class HierarchicalNSW;
 }
 
@@ -47,14 +48,16 @@ private:
     int _ef_const{100};
     size_t _k{1};
 
-    hnswlib::L2Space* _space;
-    hnswlib::HierarchicalNSW<float>* _hnsw;
+    hnswlib::CloudySpace* _space;
+    hnswlib::HierarchicalNSW<double>* _hnsw;
 
-    float _max_dist{1.f};
+    double _max_dist{1.f};
 
     // cloudy
     Array _lambda;
     std::unordered_map<size_t, CloudyData> _cloudys;
+
+    std::mutex _mutex;
 };
 
 #endif
