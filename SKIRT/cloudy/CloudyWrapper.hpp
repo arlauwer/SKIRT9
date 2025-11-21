@@ -19,14 +19,14 @@ public:
 
     void setup(string basePath, const Array& lambda);
 
-    CloudyData query(double hden, double metallicity, const Array& radField);
+    CloudyData query(double hden, double metallicity, const Array& radField, double ins);
 
     void save();
 
     void load();
 
 private:
-    CloudyData perform(double hden, double metallicity, const Array& radField);
+    CloudyData perform(double hden, double metallicity, const Array& radField, double ins);
 
     // we need to make this thread safe somehow.
     // For a single materialmix this is easily done by making the uid atomic.
@@ -48,10 +48,10 @@ private:
     int _ef_const{100};
     size_t _k{1};
 
-    hnswlib::CloudySpace* _space;
-    hnswlib::HierarchicalNSW<double>* _hnsw;
+    hnswlib::CloudySpace* _space{nullptr};
+    hnswlib::HierarchicalNSW<double>* _hnsw{nullptr};
 
-    double _max_dist{1.f};
+    double _max_dist{0.5};
 
     // cloudy
     Array _lambda;

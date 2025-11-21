@@ -22,10 +22,16 @@ CloudyData::CloudyData() : temperature(0.), abundances(0.), opacities(0.), emiss
 
 ////////////////////////////////////////////////////////////////////
 
-Cloudy::Cloudy(int uid, string runsPath, const string& temp, double hden, double metallicity, const Array& radField)
-    : _uid(uid), _path(StringUtils::joinPaths(runsPath, StringUtils::toString(uid))), _template(temp), _hden(hden),
-      _metallicity(metallicity), _radField(radField)
-{}
+Cloudy::Cloudy(int uid, string runsPath, const string& temp, double hden, double metallicity, const Array& radField,
+               double ins)
+    : _hden(hden * 1e-6), _metallicity(metallicity), _radField(radField), _ins(ins * cloudy::stc), _uid(uid),
+      _path(StringUtils::joinPaths(runsPath, StringUtils::toString(uid))), _template(temp)
+{
+    // hden (1/m3) -> _hden (1/cm3)
+    // metallicity (1) -> _metallicity (1)
+    // rad (W/4pi/m2/m) -> _rad (~W/m2/m)
+    // ins (W/m2) -> _ins (erg/s/cm2)
+}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -49,7 +55,7 @@ void Cloudy::setup()
     string temp = _template;
     temp = StringUtils::replace(temp, "{hden}", StringUtils::toString(_hden));
     temp = StringUtils::replace(temp, "{metallicity}", StringUtils::toString(_metallicity));
-    temp = StringUtils::replace(temp, "{ins}", StringUtils::toString(1e-1));
+    temp = StringUtils::replace(temp, "{ins}", StringUtils::toString(_ins));
     std::ofstream in = System::ofstream(StringUtils::joinPaths(_path, "sim.in"));
     in.write(temp.data(), temp.size());
     in.close();
@@ -59,15 +65,20 @@ void Cloudy::setup()
     // Jnu (~W/m2/Hz) & _radField is (4pi W/m2/m)
     for (int i = 0; i < cloudy::numBins; i++)
     {
-        double ryd1 = cloudy::edges[i] * 1.00001;
-        double ryd2 = cloudy::edges[i + 1] * 0.9999;
+        double ryd1 = cloudy::edges[i] * 0.9999;
+        double ryd2 = cloudy::edges[i + 1] * 1.00001;
         double lam1 = 9.112662439164599e-08 / ryd1;  // hc / Q / lam / 13.6
         double lam2 = 9.112662439164599e-08 / ryd2;
         double rad = max(_radField[i], cloudy::minRad);                  // to avoid 0
         double Jnu1 = rad / (4. * M_PI * Constants::c()) * lam1 * lam1;  // same radBin, different lambda
         double Jnu2 = rad / (4. * M_PI * Constants::c()) * lam2 * lam2;  // same radBin, different lambda
-        sed << ryd1 << "\t" << Jnu1 << std::endl;                        // left
-        sed << ryd2 << "\t" << Jnu2 << std::endl;                        // right
+        sed << ryd1 << "\t" << Jnu1;                                     // left
+        if (i == 0)
+            sed << " Flambda\n";  // (~W/m2/m)
+        else
+            sed << "\n";
+
+        sed << ryd2 << "\t" << Jnu2 << "\n";  // right
     }
 
     sed.close();
@@ -104,7 +115,7 @@ void Cloudy::read()
     auto speciesHeader = StringUtils::split(header, "\t");
     auto speciesData = StringUtils::split(line, "\t");
     _data.abundances.resize(cloudy::numIons);
-    for (int i = 1; i < speciesData.size(); i++)  // skip first column
+    for (size_t i = 1; i < speciesData.size(); i++)  // skip first column
     {
         auto speciesName = speciesHeader[i];
         int Z, N;

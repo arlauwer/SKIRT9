@@ -946,7 +946,7 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, do
 
     int numBins = config()->radiationFieldWLG()->numBins();
     Array J(numBins);
-    J = 1e30;  // temporary really high for now
+    J = 1e10;  // temporary really high for now
 
     const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
 }
@@ -957,14 +957,13 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
 {
     UpdateStatus status;
 
-    Array radWidth = config()->radiationFieldWLG()->dlambdav();
+    // Array radWidth = config()->radiationFieldWLG()->dlambdav();
 
     // Lookup table values
-    Array J = Jv * radWidth * 4. * M_PI;  // W/m2/m/sr -> W/m2 (integrated mean intensity)
-    double n = state->numberDensity();    // 1/m3 -> 1/cm3
+    double n = state->numberDensity();  // 1/m3 -> 1/cm3
     double Z = state->metallicity();
 
-    double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
+    double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, Jv);
 
     if (conv < 1e-3)
         status.updateConverged();
@@ -986,7 +985,9 @@ bool XRayIonicGasMix::isSpecificStateConverged(int numCells, int numUpdated, int
 
 double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, const Array& J)
 {
-    CloudyData cloudy = _cloudyWrapper.query(n, Z, J);
+    Array radWidth = config()->radiationFieldWLG()->dlambdav();
+    double ins = (4. * M_PI * J * radWidth).sum();  // W/m2/m/sr -> W/m2 (integrated mean intensity)
+    CloudyData cloudy = _cloudyWrapper.query(n, Z, J, ins);
 
     double temp = cloudy.temperature;
     state->setTemperature(temp);
@@ -1054,7 +1055,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
         double prev = prevAbund[i];
         double abund = state->getAbundance(i);
 
-        double diff = (prev - abund) / (n * 1e6);
+        double diff = (prev - abund) / n * 1e-6;
         conv += diff * diff;
     }
 

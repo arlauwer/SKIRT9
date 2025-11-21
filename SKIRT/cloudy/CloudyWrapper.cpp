@@ -6,6 +6,7 @@
 #include "space_cloudy.h"
 #include <atomic>
 #include <cmath>
+#include <mutex>
 #include <sstream>
 
 std::atomic<int> CloudyWrapper::_next_uid{0};
@@ -25,17 +26,22 @@ namespace
         // size_t qty = *((size_t*)qty_ptr);
 
         double res = 0;
-        res += hden_factor * std::abs(std::log10(*pVect1 / *pVect2));
+
+        // log n
+        // fix this: n1 nor n2 should ever be zero!!!!
+        if (*pVect1 != 0. && *pVect2 != 0.) res += hden_factor * std::abs(std::log10(*pVect1 / *pVect2));
         pVect1++;
         pVect2++;
 
-        res += metallicity_factor * std::abs(std::log10(*pVect1 / *pVect2));
+        // linear Z
+        if (*pVect1 != 0. && *pVect2 != 0.) res += metallicity_factor * std::abs(*pVect1 - *pVect2);
         pVect1++;
         pVect2++;
 
+        // log rad
         for (size_t i = 0; i < cloudy::numBins; i++)
         {
-            if (*pVect1 != 0 && *pVect2 != 0) res += rad_factor * std::abs(std::log10(*pVect1 / *pVect2));
+            if (*pVect1 != 0. && *pVect2 != 0.) res += rad_factor * std::abs(std::log10(*pVect1 / *pVect2));
             pVect1++;
             pVect2++;
         }
@@ -84,7 +90,7 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
     load();
 }
 
-CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& radField)
+CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& radField, double ins)
 {
     if (radField.size() != cloudy::numBins) throw FATALERROR("CloudyWrapper::query: wrong number of radfield values");
 
@@ -94,43 +100,37 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
     point[1] = metallicity;
     for (int i = 0; i < cloudy::numBins; i++) point[2 + i] = radField[i];
 
+    // we should lock before knn search, then add cloudy to hnsw, unlock and then run cloudy!
+    // so we 'add' the point to hnsw thead-safe and only run cloudy where needed!
+    // might become a problem if knn is slow since it will be completely sequential
+    // alternatively, we could do knn first, then lock, then double check if the new points are too close and only run
+    // cloudy for those that are not, then unlock
+
+    _mutex.lock();
+
     // do knn search
     vector<std::pair<double, hnswlib::labeltype>> knn = _hnsw->searchKnnCloserFirst(point.data(), _k);
 
     // check if further than max distance
     if (knn.size() != _k || knn[_k - 1].first > _max_dist)
     {
-        // add new point
-        CloudyData data = perform(hden, metallicity, radField);
         int label = _next_label++;
-
-        // lock
-        std::unique_lock<std::mutex> lock(_mutex);
-
         _hnsw->addPoint(point.data(), label);
+        std::cout << "performing cloudy\nlabel: " << label;
+        for (int i = 0; i < cloudy::numBins; i++) std::cout << "\t" << radField[i];
+        std::cout << std::endl;
+        _mutex.unlock();
+
+        // add new point
+        CloudyData data = perform(hden, metallicity, radField, ins);
+
         _cloudys[label] = data;
-
-        ////// debug comparison of nn and point //////
-        // if (knn.size() > 0)
-        // {
-        //     size_t label = knn[0].second;
-
-        //     vector<double> input1 = _hnsw->getDataByLabel<double>(label);
-        //     vector<double> input2 = point;
-
-        //     auto it = _cloudys.find(label);
-        //     if (it != _cloudys.end())
-        //     {
-        //         CloudyData output1 = data;
-        //         CloudyData output2 = it->second;
-        //     }
-        // }
-        /////////////////////////////////////////////
 
         return data;
     }
     else
     {
+        _mutex.unlock();
         // nn
         size_t label = knn[0].second;
         auto it = _cloudys.find(label);
@@ -162,7 +162,7 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
 void CloudyWrapper::save()
 {
     // save hnsw
-    _hnsw->saveIndex(StringUtils::joinPaths(_basePath, "hnsw.bin"));
+    if (_hnsw) _hnsw->saveIndex(StringUtils::joinPaths(_basePath, "hnsw.bin"));
 
     // save cloudy
     for (auto& pair : _cloudys)
@@ -206,10 +206,10 @@ void CloudyWrapper::load()
     }
 }
 
-CloudyData CloudyWrapper::perform(double hden, double metallicity, const Array& radField)
+CloudyData CloudyWrapper::perform(double hden, double metallicity, const Array& radField, double ins)
 {
     int uid = _next_uid++;
-    Cloudy cloudy(uid, _runsPath, _template, hden, metallicity, radField);
+    Cloudy cloudy(uid, _runsPath, _template, hden, metallicity, radField, ins);
     cloudy.perform();
     return cloudy.data();
 }

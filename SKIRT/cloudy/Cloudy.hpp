@@ -8,10 +8,11 @@
 
 namespace cloudy
 {
-    constexpr int numBins = 1;
-    constexpr std::array<double, 5> edges{1e0, 1e4};
+    constexpr int numBins = 2;
+    constexpr std::array<double, 5> edges{1e4, 1e1, 1e0};
     constexpr int numIons = 465;
     constexpr double minRad = 1e-10;
+    constexpr double stc = 1e3;  // W/m2 -> erg/s/cm2
 }
 
 class CloudyData
@@ -79,7 +80,8 @@ public:
 class Cloudy
 {
 public:
-    Cloudy(int uid, string runsPath, const string& temp, double hden, double metallicity, const Array& radField);
+    Cloudy(int uid, string runsPath, const string& temp, double hden, double metallicity, const Array& radField,
+           double ins);
 
     void perform();
 
@@ -99,6 +101,7 @@ private:
     double _hden;
     double _metallicity;
     Array _radField;
+    double _ins;  // mean intensity in W/m2 over the full radiation field range
 
     // ================== Output Data ==================
     CloudyData _data;
