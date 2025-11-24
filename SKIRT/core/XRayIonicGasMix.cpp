@@ -987,7 +987,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
 {
     Array radWidth = config()->radiationFieldWLG()->dlambdav();
     double ins = (4. * M_PI * J * radWidth).sum();  // W/m2/m/sr -> W/m2 (integrated mean intensity)
-    CloudyData cloudy = _cloudyWrapper.query(n, Z, J, ins);
+    CloudyData& cloudy = _cloudyWrapper.query(n, Z, J, ins);
 
     double temp = cloudy.temperature;
     state->setTemperature(temp);

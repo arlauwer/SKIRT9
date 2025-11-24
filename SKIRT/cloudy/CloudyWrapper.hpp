@@ -19,15 +19,13 @@ public:
 
     void setup(string basePath, const Array& lambda);
 
-    CloudyData query(double hden, double metallicity, const Array& radField, double ins);
+    CloudyData& query(double hden, double metallicity, const Array& radField, double ins);
 
     void save();
 
     void load();
 
 private:
-    CloudyData perform(double hden, double metallicity, const Array& radField, double ins);
-
     // we need to make this thread safe somehow.
     // For a single materialmix this is easily done by making the uid atomic.
     // But for multiple mixes, not sure? Make it static?

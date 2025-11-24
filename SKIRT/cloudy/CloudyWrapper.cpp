@@ -1,4 +1,5 @@
 #include "CloudyWrapper.hpp"
+#include "Cloudy.hpp"
 #include "FatalError.hpp"
 #include "StringUtils.hpp"
 #include "System.hpp"
@@ -8,6 +9,8 @@
 #include <cmath>
 #include <mutex>
 #include <sstream>
+#include <thread>
+#include <utility>
 
 std::atomic<int> CloudyWrapper::_next_uid{0};
 std::atomic<int> CloudyWrapper::_next_label{0};
@@ -90,7 +93,7 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
     load();
 }
 
-CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& radField, double ins)
+CloudyData& CloudyWrapper::query(double hden, double metallicity, const Array& radField, double ins)
 {
     if (radField.size() != cloudy::numBins) throw FATALERROR("CloudyWrapper::query: wrong number of radfield values");
 
@@ -116,15 +119,18 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
     {
         int label = _next_label++;
         _hnsw->addPoint(point.data(), label);
-        std::cout << "performing cloudy\nlabel: " << label;
-        for (int i = 0; i < cloudy::numBins; i++) std::cout << "\t" << radField[i];
-        std::cout << std::endl;
+        std::cout << "performing cloudy label: " << label << std::endl;
+
+        _cloudys.emplace(std::piecewise_construct, std::forward_as_tuple(label), std::forward_as_tuple());
+        CloudyData& data = _cloudys[label];
+
         _mutex.unlock();
 
-        // add new point
-        CloudyData data = perform(hden, metallicity, radField, ins);
+        Cloudy cloudy(_next_uid++, _runsPath, _template, hden, metallicity, radField, ins);
+        cloudy.perform(data);
+        data.done = true;
 
-        _cloudys[label] = data;
+        std::cout << "done performing cloudy label: " << label << std::endl;
 
         return data;
     }
@@ -134,8 +140,9 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
         // nn
         size_t label = knn[0].second;
         auto it = _cloudys.find(label);
+        std::cout << "found knn label: " << label << std::endl;
         if (it == _cloudys.end()) throw FATALERROR("CloudyWrapper::query: label not found");
-        CloudyData data = it->second;
+        CloudyData& data = it->second;
 
         // interpolate
         // CloudyData data;
@@ -155,6 +162,11 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
         //     data.opacities += weight * cloudy.opacities;
         //     data.emissivities += weight * cloudy.emissivities;
         // }
+
+        while (!data.done) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        std::cout << "done waiting for label: " << label << std::endl;
+
         return data;
     }
 }
@@ -194,22 +206,14 @@ void CloudyWrapper::load()
         {
         }
 
-        CloudyData data;
+        _cloudys.emplace(std::piecewise_construct, std::forward_as_tuple(label), std::forward_as_tuple());
+        CloudyData& data = _cloudys[label];
 
         string path = StringUtils::joinPaths(_cloudyDir, file);
 
         std::ifstream in = System::ifstream(path);
         in >> data;
         in.close();
-
-        _cloudys[label] = data;
+        data.done = true;
     }
-}
-
-CloudyData CloudyWrapper::perform(double hden, double metallicity, const Array& radField, double ins)
-{
-    int uid = _next_uid++;
-    Cloudy cloudy(uid, _runsPath, _template, hden, metallicity, radField, ins);
-    cloudy.perform();
-    return cloudy.data();
 }

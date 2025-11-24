@@ -4,6 +4,7 @@
 #include "Array.hpp"
 #include "NR.hpp"
 #include <array>
+#include <atomic>
 #include <iostream>
 
 namespace cloudy
@@ -42,6 +43,7 @@ public:
     Array abundances;
     Array opacities;
     Array emissivities;
+    std::atomic<bool> done;
 
     friend std::ostream& operator<<(std::ostream& out, const CloudyData& data)
     {
@@ -83,28 +85,23 @@ public:
     Cloudy(int uid, string runsPath, const string& temp, double hden, double metallicity, const Array& radField,
            double ins);
 
-    void perform();
-
-    CloudyData& data() { return _data; }
+    void perform(CloudyData& data);
 
 private:
     void setup();
 
     void run();
 
-    void read();
+    void read(CloudyData& data) const;
 
     // maybe use ions from XRayIonicGasMix and put it here for consistency?
-    std::pair<int, int> getElement(string species);
+    std::pair<int, int> getElement(string species) const;
 
     // ================== Input Data ==================
     double _hden;
     double _metallicity;
     Array _radField;
     double _ins;  // mean intensity in W/m2 over the full radiation field range
-
-    // ================== Output Data ==================
-    CloudyData _data;
 
     // ================== Internal Data ==================
     int _uid;

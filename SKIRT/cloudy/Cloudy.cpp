@@ -18,7 +18,7 @@ namespace
 
 ////////////////////////////////////////////////////////////////////
 
-CloudyData::CloudyData() : temperature(0.), abundances(0.), opacities(0.), emissivities(0.) {}
+CloudyData::CloudyData() : temperature(0.), abundances(0.), opacities(0.), emissivities(0.), done(false) {}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -35,11 +35,11 @@ Cloudy::Cloudy(int uid, string runsPath, const string& temp, double hden, double
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::perform()
+void Cloudy::perform(CloudyData& data)
 {
     setup();
     run();
-    read();
+    read(data);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -94,7 +94,7 @@ void Cloudy::run()
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::read()
+void Cloudy::read(CloudyData& data) const
 {
     string header;
     string line;
@@ -104,7 +104,7 @@ void Cloudy::read()
     getline(ovr, header);  // skip header
     getline(ovr, line);
     ovr.close();
-    _data.temperature = StringUtils::toDouble(StringUtils::split(line, "\t")[1]);
+    data.temperature = StringUtils::toDouble(StringUtils::split(line, "\t")[1]);
 
     //abundances
     std::ifstream species = System::ifstream(StringUtils::joinPaths(_path, "sim.species"));
@@ -114,7 +114,7 @@ void Cloudy::read()
 
     auto speciesHeader = StringUtils::split(header, "\t");
     auto speciesData = StringUtils::split(line, "\t");
-    _data.abundances.resize(cloudy::numIons);
+    data.abundances.resize(cloudy::numIons);
     for (size_t i = 1; i < speciesData.size(); i++)  // skip first column
     {
         auto speciesName = speciesHeader[i];
@@ -123,7 +123,7 @@ void Cloudy::read()
         if (N > 0)
         {
             int j = Z * (Z - 1) / 2 + (N - 1);
-            _data.abundances[j] = StringUtils::toDouble(speciesData[i]);
+            data.abundances[j] = StringUtils::toDouble(speciesData[i]);
         }
     }
 
@@ -140,7 +140,7 @@ void Cloudy::read()
         opacities.push_back(StringUtils::toDouble(cols[2]));
     }
     opac.close();
-    _data.opacities = Array(opacities.data(), opacities.size());
+    data.opacities = Array(opacities.data(), opacities.size());
 
     // emissivities
     std::ifstream emis = System::ifstream(StringUtils::joinPaths(_path, "sim.con"));
@@ -156,12 +156,12 @@ void Cloudy::read()
         emissivities.push_back(StringUtils::toDouble(cols[3]));
     }
     emis.close();
-    _data.emissivities = Array(emissivities.data(), emissivities.size());
+    data.emissivities = Array(emissivities.data(), emissivities.size());
 }
 
 ////////////////////////////////////////////////////////////////////
 
-std::pair<int, int> Cloudy::getElement(string species)
+std::pair<int, int> Cloudy::getElement(string species) const
 {
     auto parts = StringUtils::split(species, "+");
 
