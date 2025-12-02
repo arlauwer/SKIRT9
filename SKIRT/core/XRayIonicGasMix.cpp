@@ -791,6 +791,7 @@ void XRayIonicGasMix::setupSelfBefore()
     TextInFile wav(this, "Cloudy_wav.txt", "Cloudy wavelengths", true);
     wav.addColumn("lambda", "wavelength", "Ryd");
     _lambda = wav.readAllColumns()[0];
+    _lambda = cloudy::Rtm / _lambda;
 
     // reverse std::valarray
     std::reverse(std::begin(_lambda), std::end(_lambda));
@@ -960,7 +961,7 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     // Array radWidth = config()->radiationFieldWLG()->dlambdav();
 
     // Lookup table values
-    double n = state->numberDensity();  // 1/m3 -> 1/cm3
+    double n = state->numberDensity();  // 1/m3
     double Z = state->metallicity();
 
     double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, Jv);
@@ -1055,10 +1056,9 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
         double prev = prevAbund[i];
         double abund = state->getAbundance(i);
 
-        double diff = (prev - abund) / n * 1e-6;
+        double diff = (prev - abund) / n;
         conv += diff * diff;
     }
-
     return conv;
 }
 

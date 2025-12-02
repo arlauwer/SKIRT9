@@ -5,7 +5,6 @@
 
 #include "MediumSystem.hpp"
 #include "Configuration.hpp"
-#include "Constants.hpp"
 #include "DensityInCellInterface.hpp"
 #include "DisjointWavelengthGrid.hpp"
 #include "FatalError.hpp"

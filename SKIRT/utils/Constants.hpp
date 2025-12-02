@@ -78,6 +78,13 @@ namespace Constants
         return 1.602176634e-19;
     }
 
+    /** This function returns the wavelength of the Rydberg energy or the reciprocal of the Rydberg
+        constant \f$R_{\text{H}}\f$. */
+    constexpr double iRyd()
+    {
+        return 1 / 10973731.568157;
+    }
+
     /** This function returns the solar mass. */
     constexpr double Msun()
     {

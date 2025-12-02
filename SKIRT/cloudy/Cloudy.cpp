@@ -1,5 +1,4 @@
 #include "Cloudy.hpp"
-#include "Constants.hpp"
 #include "FatalError.hpp"
 #include "StringUtils.hpp"
 #include "System.hpp"
@@ -62,23 +61,23 @@ void Cloudy::setup()
 
     // sed.in
     std::ofstream sed = System::ofstream(StringUtils::joinPaths(_path, "sed.in"));
-    // Jnu (~W/m2/Hz) & _radField is (4pi W/m2/m)
+    // Jlambda (~W/m2/m) & _radField is (4pi W/m2/m)
     for (int i = 0; i < cloudy::numBins; i++)
     {
-        double ryd1 = cloudy::edges[i] * 0.9999;
-        double ryd2 = cloudy::edges[i + 1] * 1.00001;
-        double lam1 = 9.112662439164599e-08 / ryd1;  // hc / Q / lam / 13.6
-        double lam2 = 9.112662439164599e-08 / ryd2;
-        double rad = max(_radField[i], cloudy::minRad);                  // to avoid 0
-        double Jnu1 = rad / (4. * M_PI * Constants::c()) * lam1 * lam1;  // same radBin, different lambda
-        double Jnu2 = rad / (4. * M_PI * Constants::c()) * lam2 * lam2;  // same radBin, different lambda
-        sed << ryd1 << "\t" << Jnu1;                                     // left
-        if (i == 0)
-            sed << " Flambda\n";  // (~W/m2/m)
-        else
-            sed << "\n";
+        double left = cloudy::edges[i] * 0.9999;
+        double right = cloudy::edges[i + 1] * 1.00001;
+        double rad = max(_radField[i], cloudy::minRad);  // to avoid 0
 
-        sed << ryd2 << "\t" << Jnu2 << "\n";  // right
+        if (i == 0)
+        {
+            sed << left << "\t" << rad << " Flambda\n";
+            sed << right << "\t" << rad << "\n";
+        }
+        else
+        {
+            sed << left << "\t" << rad << "\n";
+            sed << right << "\t" << rad << "\n";
+        }
     }
 
     sed.close();
@@ -123,7 +122,7 @@ void Cloudy::read(CloudyData& data) const
         if (N > 0)
         {
             int j = Z * (Z - 1) / 2 + (N - 1);
-            data.abundances[j] = StringUtils::toDouble(speciesData[i]);
+            data.abundances[j] = StringUtils::toDouble(speciesData[i]) * 1e6;  // 1/cm3 -> 1/m3
         }
     }
 
@@ -146,13 +145,18 @@ void Cloudy::read(CloudyData& data) const
     std::ifstream emis = System::ifstream(StringUtils::joinPaths(_path, "sim.con"));
     getline(emis, header);  // skip header
     std::vector<double> emissivities;
-    for (int i = 0; getline(emis, line); i++)
+    while (getline(emis, line))
     {
-        if (i < 5884 || i > 9024) continue;
-
         auto cols = StringUtils::split(line, "\t");
         if (cols.size() < 3) continue;
+        double ryd = StringUtils::toDouble(cols[0]);
+
+        // stay within range
+        if (ryd < cloudy::edges[cloudy::numBins - 1] || ryd > cloudy::edges[0]) continue;
+
         // 4pi erg/s/cm2
+        // should be W/m2/m
+        // double
         emissivities.push_back(StringUtils::toDouble(cols[3]));
     }
     emis.close();
