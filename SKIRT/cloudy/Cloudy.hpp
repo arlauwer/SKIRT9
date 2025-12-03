@@ -10,12 +10,17 @@
 
 namespace cloudy
 {
-    constexpr int numBins = 1;
-    constexpr std::array<double, numBins + 1> edges{1e4, 1e0};
+    constexpr int numBins = 2;
+    constexpr std::array<double, numBins + 1> edges{1e4, 1e1, 1e0};
     constexpr int numIons = 465;
     constexpr double minRad = 1e-10;
     constexpr double stc = 1e3;                // W/m2 -> erg/s/cm2
     constexpr double Rtm = Constants::iRyd();  // Ryd -> m
+
+    constexpr bool inRange(double Ryd)
+    {
+        return Ryd >= edges[numBins - 1] && Ryd <= edges[0];
+    }
 }
 
 class CloudyData

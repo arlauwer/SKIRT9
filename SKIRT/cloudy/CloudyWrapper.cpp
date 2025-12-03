@@ -44,7 +44,8 @@ namespace
         // log rad
         for (size_t i = 0; i < cloudy::numBins; i++)
         {
-            if (*pVect1 != 0. && *pVect2 != 0.) res += rad_factor * std::abs(std::log10(*pVect1 / *pVect2));
+            // should never be 0!
+            res += rad_factor * std::abs(std::log10(*pVect1 / *pVect2));
             pVect1++;
             pVect2++;
         }
@@ -101,7 +102,7 @@ CloudyData& CloudyWrapper::query(double hden, double metallicity, const Array& r
     vector<double> point(_dim);
     point[0] = hden;
     point[1] = metallicity;
-    for (int i = 0; i < cloudy::numBins; i++) point[2 + i] = radField[i];
+    for (int i = 0; i < cloudy::numBins; i++) point[2 + i] = max(radField[i], cloudy::minRad);
 
     // we should lock before knn search, then add cloudy to hnsw, unlock and then run cloudy!
     // so we 'add' the point to hnsw thead-safe and only run cloudy where needed!
@@ -140,7 +141,6 @@ CloudyData& CloudyWrapper::query(double hden, double metallicity, const Array& r
         // nn
         size_t label = knn[0].second;
         auto it = _cloudys.find(label);
-        std::cout << "found knn label: " << label << std::endl;
         if (it == _cloudys.end()) throw FATALERROR("CloudyWrapper::query: label not found");
         CloudyData& data = it->second;
 
@@ -164,8 +164,6 @@ CloudyData& CloudyWrapper::query(double hden, double metallicity, const Array& r
         // }
 
         while (!data.done) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-        std::cout << "done waiting for label: " << label << std::endl;
 
         return data;
     }

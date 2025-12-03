@@ -132,35 +132,37 @@ void Cloudy::read(CloudyData& data) const
     std::vector<double> opacities;
     for (int i = 0; getline(opac, line); i++)
     {
-        if (i < 5884 || i > 9024) continue;
-
         auto cols = StringUtils::split(line, "\t");
         if (cols.size() < 2) continue;
+
+        if (i < 5884 || i > 9024) continue;
+
         opacities.push_back(StringUtils::toDouble(cols[2]));
     }
     opac.close();
+    std::reverse(opacities.begin(), opacities.end());
     data.opacities = Array(opacities.data(), opacities.size());
+    if (data.opacities.size() != 3141) throw FATALERROR("Cloudy::read: wrong number of opacities");
 
     // emissivities
     std::ifstream emis = System::ifstream(StringUtils::joinPaths(_path, "sim.con"));
     getline(emis, header);  // skip header
     std::vector<double> emissivities;
-    while (getline(emis, line))
+    for (int i = 0; getline(emis, line); i++)
     {
         auto cols = StringUtils::split(line, "\t");
         if (cols.size() < 3) continue;
-        double ryd = StringUtils::toDouble(cols[0]);
 
-        // stay within range
-        if (ryd < cloudy::edges[cloudy::numBins - 1] || ryd > cloudy::edges[0]) continue;
+        if (i < 5884 || i > 9024) continue;
 
         // 4pi erg/s/cm2
         // should be W/m2/m
-        // double
         emissivities.push_back(StringUtils::toDouble(cols[3]));
     }
     emis.close();
+    std::reverse(emissivities.begin(), emissivities.end());
     data.emissivities = Array(emissivities.data(), emissivities.size());
+    if (data.emissivities.size() != 3141) throw FATALERROR("Cloudy::read: wrong number of emissivities");
 }
 
 ////////////////////////////////////////////////////////////////////

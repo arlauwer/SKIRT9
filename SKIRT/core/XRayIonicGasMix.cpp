@@ -967,9 +967,14 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, Jv);
 
     if (conv < 1e-3)
+    {
         status.updateConverged();
+    }
     else
+    {
         status.updateNotConverged();
+        std::cout << state->cellIndex() << std::endl;
+    }
     return status;
 }
 
