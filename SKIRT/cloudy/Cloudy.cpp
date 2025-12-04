@@ -17,7 +17,7 @@ namespace
 
 ////////////////////////////////////////////////////////////////////
 
-CloudyData::CloudyData() : temperature(0.), abundances(0.), opacities(0.), emissivities(0.) {}
+CloudyData::CloudyData() : temperature(0.), abundances(0., 465), opacities(0., 3141), emissivities(0., 3141) {}
 
 ////////////////////////////////////////////////////////////////////
 

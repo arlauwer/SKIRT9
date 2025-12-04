@@ -125,7 +125,6 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
         _cloudys.emplace(std::piecewise_construct, std::forward_as_tuple(label), std::forward_as_tuple());
         _dones[label] = false;
         CloudyData& data = _cloudys[label];
-        data.id = label;
 
         _mutex.unlock();
 
@@ -140,15 +139,6 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
     else
     {
         _mutex.unlock();
-        /**
-        WE HAVE TO INTERPOLATE HERE TO AVOID SPIRAL OF DEATH!!
-        */
-
-        // size_t label = knn[0].second;
-        // auto it = _cloudys.find(label);
-        // if (it == _cloudys.end()) throw FATALERROR("CloudyWrapper::query: label not found");
-        // CloudyData& data = it->second;
-
         // interpolate
         CloudyData data;
 
@@ -157,7 +147,7 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
 
         for (auto& pair : knn)
         {
-            double weight = pair.first / total_dist;
+            double weight = total_dist ? (total_dist - pair.first) / total_dist : 1.;
             int id = pair.second;
 
             // interpolate using dist

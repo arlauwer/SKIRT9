@@ -49,7 +49,6 @@ public:
     Array abundances;
     Array opacities;
     Array emissivities;
-    int id;
 
     friend std::ostream& operator<<(std::ostream& out, const CloudyData& data)
     {
