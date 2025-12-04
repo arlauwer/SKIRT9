@@ -156,6 +156,7 @@ private:
     int _indexKappaSca;         // index of the absorption and scattering cross sections in the custom state variables
     int _indexKappaScaCum;      // index of the cumulative scattering cross section for Rayleigh and Compton scattering
     int _indexEmissivity;       // index of the emissivity in the custom state variables
+    int _indexId;               // index of the cloudy id in the custom state variables
 
     // shared variables //
     int _numLambda;

@@ -5,7 +5,6 @@
 #include "Constants.hpp"
 #include "NR.hpp"
 #include <array>
-#include <atomic>
 #include <iostream>
 
 namespace cloudy
@@ -50,7 +49,7 @@ public:
     Array abundances;
     Array opacities;
     Array emissivities;
-    std::atomic<bool> done;
+    int id;
 
     friend std::ostream& operator<<(std::ostream& out, const CloudyData& data)
     {

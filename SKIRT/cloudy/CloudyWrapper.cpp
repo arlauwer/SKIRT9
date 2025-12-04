@@ -94,7 +94,7 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
     load();
 }
 
-CloudyData& CloudyWrapper::query(double hden, double metallicity, const Array& radField, double ins)
+CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& radField, double ins)
 {
     if (radField.size() != cloudy::numBins) throw FATALERROR("CloudyWrapper::query: wrong number of radfield values");
 
@@ -123,13 +123,15 @@ CloudyData& CloudyWrapper::query(double hden, double metallicity, const Array& r
         std::cout << "performing cloudy label: " << label << std::endl;
 
         _cloudys.emplace(std::piecewise_construct, std::forward_as_tuple(label), std::forward_as_tuple());
+        _dones[label] = false;
         CloudyData& data = _cloudys[label];
+        data.id = label;
 
         _mutex.unlock();
 
         Cloudy cloudy(_next_uid++, _runsPath, _template, hden, metallicity, radField, ins);
         cloudy.perform(data);
-        data.done = true;
+        _dones[label] = true;
 
         std::cout << "done performing cloudy label: " << label << std::endl;
 
@@ -138,32 +140,34 @@ CloudyData& CloudyWrapper::query(double hden, double metallicity, const Array& r
     else
     {
         _mutex.unlock();
-        // nn
-        size_t label = knn[0].second;
-        auto it = _cloudys.find(label);
-        if (it == _cloudys.end()) throw FATALERROR("CloudyWrapper::query: label not found");
-        CloudyData& data = it->second;
+        /**
+        WE HAVE TO INTERPOLATE HERE TO AVOID SPIRAL OF DEATH!!
+        */
+
+        // size_t label = knn[0].second;
+        // auto it = _cloudys.find(label);
+        // if (it == _cloudys.end()) throw FATALERROR("CloudyWrapper::query: label not found");
+        // CloudyData& data = it->second;
 
         // interpolate
-        // CloudyData data;
+        CloudyData data;
 
-        // double total_dist = 0.f;
-        // for (auto& pair : knn) total_dist += pair.first;
+        double total_dist = 0.f;
+        for (auto& pair : knn) total_dist += pair.first;
 
-        // for (auto& pair : knn)
-        // {
-        //     double weight = pair.first / total_dist;
-        //     int id = pair.second;
+        for (auto& pair : knn)
+        {
+            double weight = pair.first / total_dist;
+            int id = pair.second;
 
-        //     // interpolate using dist
-        //     CloudyData& cloudy = _cloudys[id];
-        //     data.temperature += weight * cloudy.temperature;
-        //     data.abundances += weight * cloudy.abundances;
-        //     data.opacities += weight * cloudy.opacities;
-        //     data.emissivities += weight * cloudy.emissivities;
-        // }
-
-        while (!data.done) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // interpolate using dist
+            CloudyData& cloudy = _cloudys[id];
+            while (!_dones[id]) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            data.temperature += weight * cloudy.temperature;
+            data.abundances += weight * cloudy.abundances;
+            data.opacities += weight * cloudy.opacities;
+            data.emissivities += weight * cloudy.emissivities;
+        }
 
         return data;
     }
@@ -205,6 +209,7 @@ void CloudyWrapper::load()
         }
 
         _cloudys.emplace(std::piecewise_construct, std::forward_as_tuple(label), std::forward_as_tuple());
+        _dones[label] = true;
         CloudyData& data = _cloudys[label];
 
         string path = StringUtils::joinPaths(_cloudyDir, file);
@@ -212,6 +217,5 @@ void CloudyWrapper::load()
         std::ifstream in = System::ifstream(path);
         in >> data;
         in.close();
-        data.done = true;
     }
 }

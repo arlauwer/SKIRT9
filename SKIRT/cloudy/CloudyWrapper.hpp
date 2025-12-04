@@ -19,7 +19,7 @@ public:
 
     void setup(string basePath, const Array& lambda);
 
-    CloudyData& query(double hden, double metallicity, const Array& radField, double ins);
+    CloudyData query(double hden, double metallicity, const Array& radField, double ins);
 
     void save();
 
@@ -54,6 +54,7 @@ private:
     // cloudy
     Array _lambda;
     std::unordered_map<size_t, CloudyData> _cloudys;
+    std::unordered_map<size_t, std::atomic<bool>> _dones;
 
     std::mutex _mutex;
 };

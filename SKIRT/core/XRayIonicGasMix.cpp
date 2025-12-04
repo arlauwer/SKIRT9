@@ -916,6 +916,9 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     for (int l = 0; l < _numLambda + 2; l++)
         result.push_back(StateVariable::custom(index++, "volume emissivity", "powervolumedensity"));
 
+    const_cast<XRayIonicGasMix*>(this)->_indexId = index;
+    result.push_back(StateVariable::custom(index++, "cloudy id", "1"));
+
     return result;
 }
 
@@ -933,6 +936,8 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 #define getKappaScaCum(l, index) custom(_indexKappaScaCum + (l) * 2 * numAtoms + (index))
 #define setEmissivity(l, value) setCustom(_indexEmissivity + (l), (value))
 #define getEmissivity(l) custom(_indexEmissivity + (l))
+#define setId(value) setCustom(_indexId, (value))
+#define getId() custom(_indexId)
 
 ////////////////////////////////////////////////////////////////////
 
@@ -973,7 +978,6 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     else
     {
         status.updateNotConverged();
-        std::cout << state->cellIndex() << std::endl;
     }
     return status;
 }
@@ -993,7 +997,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
 {
     Array radWidth = config()->radiationFieldWLG()->dlambdav();
     double ins = (4. * M_PI * J * radWidth).sum();  // W/m2/m/sr -> W/m2 (integrated mean intensity)
-    CloudyData& cloudy = _cloudyWrapper.query(n, Z, J, ins);
+    CloudyData cloudy = _cloudyWrapper.query(n, Z, J, ins);
 
     double temp = cloudy.temperature;
     state->setTemperature(temp);
@@ -1063,6 +1067,15 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
 
         double diff = (prev - abund) / n;
         conv += diff * diff;
+    }
+
+    int prevId = state->getId();
+    state->setId(cloudy.id);
+
+    if (conv > 1e-3)
+    {
+        _log->info("cell " + StringUtils::toString(state->cellIndex()) + " not converged\tprev: "
+                   + StringUtils::toString(prevId) + "\tnow: " + StringUtils::toString(cloudy.id));
     }
     return conv;
 }
