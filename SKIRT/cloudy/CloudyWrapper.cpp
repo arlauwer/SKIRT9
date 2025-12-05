@@ -87,8 +87,6 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
 
     _space = new hnswlib::CloudySpace(_dim, Cloudy_dist);
     _hnswPath = StringUtils::joinPaths(_basePath, "hnsw.bin");
-    _cloudyDir = StringUtils::joinPaths(_basePath, "cloudy");
-    System::makeDir(_cloudyDir);
 
     // potentially load existing data
     load();
@@ -150,6 +148,7 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
         else
         {
             _mutex.unlock();
+            while (!_dones[label]) std::this_thread::sleep_for(std::chrono::milliseconds(10));
             std::cout << "MATCH: " << label << std::endl;
         }
 
@@ -158,7 +157,6 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
     else
     {
         _mutex.unlock();
-        std::cout << "INTERPOLATE" << std::endl;
         // interpolate
         CloudyData data;
 
@@ -185,47 +183,79 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
 
 void CloudyWrapper::save()
 {
-    // save hnsw
     if (_hnsw) _hnsw->saveIndex(StringUtils::joinPaths(_basePath, "hnsw.bin"));
 
-    // save cloudy
-    for (auto& pair : _cloudys)
-    {
-        // save each Cloudy into its own file
-        int label = pair.first;
-        string path = StringUtils::joinPaths(_cloudyDir, StringUtils::toString(label));
+    string binPath = StringUtils::joinPaths(_basePath, "cloudy.bin");
+    std::ofstream out(binPath, std::ios::binary);
 
-        std::ofstream out = System::ofstream(path);
-        out << pair.second;
-        out.close();
+    int count = _cloudys.size();
+    out.write(reinterpret_cast<char*>(&count), sizeof(int));
+
+    for (auto it = _cloudys.begin(); it != _cloudys.end(); ++it)
+    {
+        int label = it->first;
+        CloudyData& data = it->second;
+
+        out.write(reinterpret_cast<char*>(&label), sizeof(int));
+
+        int nA = data.abundances.size();
+        int nO = data.opacities.size();
+        int nE = data.emissivities.size();
+
+        out.write(reinterpret_cast<char*>(&nA), sizeof(int));
+        out.write(reinterpret_cast<char*>(&nO), sizeof(int));
+        out.write(reinterpret_cast<char*>(&nE), sizeof(int));
+
+        out.write(reinterpret_cast<char*>(&data.temperature), sizeof(double));
+
+        if (nA > 0) out.write(reinterpret_cast<const char*>(&data.abundances[0]), nA * sizeof(double));
+        if (nO > 0) out.write(reinterpret_cast<const char*>(&data.opacities[0]), nO * sizeof(double));
+        if (nE > 0) out.write(reinterpret_cast<const char*>(&data.emissivities[0]), nE * sizeof(double));
     }
 }
 
 void CloudyWrapper::load()
 {
-    // load hnsw
     if (System::isFile(_hnswPath))
         _hnsw = new hnswlib::HierarchicalNSW<double>(_space, _hnswPath);
     else
         _hnsw = new hnswlib::HierarchicalNSW<double>(_space, _max_elements, _M, _ef_const);
 
-    // load cloudy
-    for (auto& file : System::filesInDirectory(_cloudyDir))
+    string binPath = StringUtils::joinPaths(_basePath, "cloudy.bin");
+    if (!System::isFile(binPath)) return;
+
+    std::ifstream in(binPath, std::ios::binary);
+
+    int count;
+    in.read(reinterpret_cast<char*>(&count), sizeof(int));
+
+    for (int i = 0; i < count; i++)
     {
-        int label = StringUtils::toInt(StringUtils::split(file, ".")[0]);
+        int label;
+        in.read(reinterpret_cast<char*>(&label), sizeof(int));
+
+        int nA, nO, nE;
+        in.read(reinterpret_cast<char*>(&nA), sizeof(int));
+        in.read(reinterpret_cast<char*>(&nO), sizeof(int));
+        in.read(reinterpret_cast<char*>(&nE), sizeof(int));
+
+        CloudyData data;
+        data.abundances.resize(nA);
+        data.opacities.resize(nO);
+        data.emissivities.resize(nE);
+
+        in.read(reinterpret_cast<char*>(&data.temperature), sizeof(double));
+
+        if (nA > 0) in.read(reinterpret_cast<char*>(&data.abundances[0]), nA * sizeof(double));
+        if (nO > 0) in.read(reinterpret_cast<char*>(&data.opacities[0]), nO * sizeof(double));
+        if (nE > 0) in.read(reinterpret_cast<char*>(&data.emissivities[0]), nE * sizeof(double));
+
+        _cloudys[label] = std::move(data);
+        _dones[label] = true;
+
         int current = _next_label.load();
         while (current < label + 1 && !_next_label.compare_exchange_weak(current, label + 1))
         {
         }
-
-        _cloudys.emplace(std::piecewise_construct, std::forward_as_tuple(label), std::forward_as_tuple());
-        _dones[label] = true;
-        CloudyData& data = _cloudys[label];
-
-        string path = StringUtils::joinPaths(_cloudyDir, file);
-
-        std::ifstream in = System::ifstream(path);
-        in >> data;
-        in.close();
     }
 }

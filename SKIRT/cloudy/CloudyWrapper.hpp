@@ -35,7 +35,6 @@ private:
     string _basePath;
     string _runsPath;
     string _hnswPath;
-    string _cloudyDir;
 
     string _template;
 
