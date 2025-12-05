@@ -104,11 +104,10 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
     point[1] = metallicity;
     for (int i = 0; i < cloudy::numBins; i++) point[2 + i] = max(radField[i], cloudy::minRad);
 
-    // we should lock before knn search, then add cloudy to hnsw, unlock and then run cloudy!
-    // so we 'add' the point to hnsw thead-safe and only run cloudy where needed!
-    // might become a problem if knn is slow since it will be completely sequential
-    // alternatively, we could do knn first, then lock, then double check if the new points are too close and only run
-    // cloudy for those that are not, then unlock
+    // there is some optimization to be done, since worst case we can have eg.
+    // 8 threads, 7 are waiting to interpolate and 1 is doing perform
+    // ideally we perform everything first, i.e. do a search for all cells and then determine
+    // what performs have to be done
 
     _mutex.lock();
 
@@ -116,29 +115,50 @@ CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& ra
     vector<std::pair<double, hnswlib::labeltype>> knn = _hnsw->searchKnnCloserFirst(point.data(), _k);
 
     // check if further than max distance
-    if (knn.size() != _k || knn[_k - 1].first > _max_dist)
+    if (knn.size() < _k || knn[_k - 1].first > _max_dist)
     {
-        int label = _next_label++;
-        _hnsw->addPoint(point.data(), label);
-        std::cout << "performing cloudy label: " << label << std::endl;
+        int label = -1;
+        // check for exact match
+        for (auto& nn : knn)
+        {
+            auto t = _hnsw->getDataByLabel<double>(nn.second);
+            double dist = Cloudy_dist(point.data(), t.data(), nullptr);
+            if (dist < 1e-6)  // min dist
+            {
+                label = nn.second;
+                break;
+            }
+        }
 
-        _cloudys.emplace(std::piecewise_construct, std::forward_as_tuple(label), std::forward_as_tuple());
-        _dones[label] = false;
-        CloudyData& data = _cloudys[label];
+        if (label == -1)
+        {
+            label = _next_label++;
+            _hnsw->addPoint(point.data(), label);
+            std::cout << "PERFORM: " << label << std::endl;
 
-        _mutex.unlock();
+            _cloudys[label] = CloudyData();
+            _dones[label] = false;
 
-        Cloudy cloudy(_next_uid++, _runsPath, _template, hden, metallicity, radField, ins);
-        cloudy.perform(data);
-        _dones[label] = true;
+            _mutex.unlock();
 
-        std::cout << "done performing cloudy label: " << label << std::endl;
+            Cloudy cloudy(_next_uid++, _runsPath, _template, hden, metallicity, radField, ins);
+            cloudy.perform(_cloudys[label]);
+            _dones[label] = true;
 
-        return data;
+            std::cout << "PERFORM DONE: " << label << std::endl;
+        }
+        else
+        {
+            _mutex.unlock();
+            std::cout << "MATCH: " << label << std::endl;
+        }
+
+        return _cloudys[label];
     }
     else
     {
         _mutex.unlock();
+        std::cout << "INTERPOLATE" << std::endl;
         // interpolate
         CloudyData data;
 

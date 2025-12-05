@@ -44,7 +44,7 @@ private:
     size_t _max_elements{1000};  // set this properly!
     int _M{16};
     int _ef_const{100};
-    size_t _k{1};
+    size_t _k{4};
 
     hnswlib::CloudySpace* _space{nullptr};
     hnswlib::HierarchicalNSW<double>* _hnsw{nullptr};
