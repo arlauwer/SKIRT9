@@ -7,8 +7,6 @@
 #define LYUTILS_HPP
 
 #include "Direction.hpp"
-#include "Range.hpp"
-#include <map>
 
 class Configuration;
 class Random;
@@ -145,8 +143,8 @@ namespace LyUtils
         - Return the atom velocity and a flag indicating the selected phase function.
 
         */
-    std::pair<Vec, bool> sampleAtomVelocity(double vth, double a, double center, double J32, double lambda, double T, double nH,
-                                            Direction kin, Configuration* config, Random* random);
+    std::pair<Vec, bool> sampleAtomVelocity(double vth, double a, double center, bool J32, double lambda, double T,
+                                            double nH, Direction kin, Configuration* config, Random* random);
 
     /** This function returns the Doppler-shifted wavelength in the gas bulk rest frame after a
         Lyman-alpha scattering event, given the incoming wavelength in the gas bulk rest frame, the

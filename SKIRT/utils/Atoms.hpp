@@ -6,9 +6,9 @@
 #ifndef ATOMS_HPP
 #define ATOMS_HPP
 
+#include "Constants.hpp"
 #include "FatalError.hpp"
 #include "StringUtils.hpp"
-#include "Constants.hpp"
 #include <map>
 #include <regex>
 

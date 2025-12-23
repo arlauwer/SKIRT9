@@ -8,10 +8,8 @@
 
 #include "ArrayTable.hpp"
 #include "DipolePhaseFunction.hpp"
-#include "EmittingGasMix.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
-#include "SnapshotParameter.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -127,7 +125,7 @@ public:
     //======================== Data Members ========================
 
 public:
-    // base class for bound-electron scattering helpers (public because we derive from it in anonymous namespace)
+    // base class for bound1-electron scattering helpers (public because we derive from it in anonymous namespace)
     class ScatteringHelper;
 
     struct IonParam
@@ -160,19 +158,23 @@ private:
     vector<double> _lambdafluov;   // indexed on fluo
     vector<double> _centralfluov;  // indexed on fluo
     vector<double> _widthfluov;    // indexed on fluo
-    vector<int> _Zfluov;           // indexed on fluo
+    vector<short> _Zfluov;         // indexed on fluo
 
     // resonant scattering parameters for each of the Lyman transitions
-    vector<int> _Zresv;          // indexed on res
+    vector<short> _Zresv;        // indexed on res
+    vector<short> _Lyresv;       // indexed on res (up to 18: a1/2, a3/2, b1/2, ...)
     vector<double> _aresv;       // indexed on res
     vector<double> _centerresv;  // indexed on res
-    vector<bool> _J32resv;       // indexed on res
+    ArrayTable<3> _branchvvv;    // indexed on Z, Lyu, Lyl (numAtom, numLy, numLy)
+    ArrayTable<2> _lamZLyvv;     // indexed on Z, Lyu (numAtom, numLy)
+    ArrayTable<2> _lamAZLyvv;    // indexed on Z, Lyu (numAtom, numLy)
 
     // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
     //   - Rayleigh scattering by bound electrons for each atom
     //   - Compton scattering by bound electrons for each atom
     //   - fluorescence transitions
     ArrayTable<2> _cumprobscavv;  // indexed on wav, 2*ion + fluo + res
+    ArrayTable<3> _cumbranchvvv;  // indexed on Z, Lyu, Lyl (numAtom, numLy, numLy+1)
 
     vector<double> _vtherm;  // indexed on atom
 

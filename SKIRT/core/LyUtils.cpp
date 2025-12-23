@@ -4,7 +4,6 @@
 ///////////////////////////////////////////////////////////////// */
 
 #include "LyUtils.hpp"
-#include "Atoms.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
 #include "Random.hpp"
@@ -14,9 +13,9 @@
 
 namespace
 {
-    constexpr double c = Constants::c();         // speed of light in vacuum
-    constexpr double kB = Constants::k();        // Boltzmann constant
-    constexpr double mp = Constants::Mproton();  // proton mass
+    constexpr double c = Constants::c();  // speed of light in vacuum
+    // constexpr double kB = Constants::k();        // Boltzmann constant
+    // constexpr double mp = Constants::Mproton();  // proton mass
     // constexpr double la = Constants::lambdaLya();     // central Lyman-alpha wavelength
     // constexpr double Aa = Constants::EinsteinALya();  // Einstein A coefficient for Lyman-alpha transition
 }
@@ -46,9 +45,8 @@ double LyUtils::section(double vth, double a, double center, double g, double la
 
 ////////////////////////////////////////////////////////////////////
 
-std::pair<Vec, bool> LyUtils::sampleAtomVelocity(double vth, double a, double center, double J32, double lambda,
-                                                 double T, double nH, Direction kin, Configuration* config,
-                                                 Random* random)
+std::pair<Vec, bool> LyUtils::sampleAtomVelocity(double vth, double a, double center, bool J32, double lambda, double T,
+                                                 double nH, Direction kin, Configuration* config, Random* random)
 {
     double x = (center - lambda) / lambda * c / vth;  // dimensionless frequency
 
