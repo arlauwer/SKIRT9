@@ -109,7 +109,7 @@ public:
 
     void setScatteringInfoIfNeeded(PhotonPacket* pp, const MaterialState* state, double lambda) const;
 
-    void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
+    bool peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;
 
     void performScattering(double lambda, const MaterialState* state, PhotonPacket* pp) const override;
@@ -146,25 +146,25 @@ public:
         double width;     // width (eV)
     };
     // Resonant Lyman params
-    struct ResonantParam
+    struct LymanParam
     {
-        unsigned char Z;              // atomic number
-        unsigned char Ly;             // Lyman index (alpha1/2, alpha3/2, beta1/2, ...)
-        double lambda;                // wavelength (m)
-        double a;                     // Voigt parameter
-        vector<double> cumbranching;  // normalized cumulative branching
-        double branching;             // total branching probability
+        unsigned char Z;      // atomic number
+        unsigned char index;  // Lyman index (alpha1/2, alpha3/2, beta1/2, ...)
+        double lambda;        // wavelength (m)
+        double a;             // Voigt parameter
+        Array cumbranching;   // normalized cumulative branching
+        double bprob;         // total branching probability
     };
 
 private:
     int _numIons;  // number of ions
     int _numFluo;  // number of fluorescence (+Lyman RC) transitions
-    int _numRes;   // number of Lyman resonant scattering transitions
+    int _numLym;   // number of Lyman resonant scattering transitions
 
     // persistent data
     vector<IonParam> _ionParams;
     vector<FluorescenceParam> _fluorescenceParams;
-    vector<ResonantParam> _resonantParams;
+    vector<LymanParam> _lymanParams;
     vector<double> _vtherm;  // indexed on Z
 
     // fine wavelength grid
