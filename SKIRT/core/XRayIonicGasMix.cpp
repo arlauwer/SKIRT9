@@ -3,7 +3,6 @@
 ////       © Astronomical Observatory, Ghent University         ////
 ///////////////////////////////////////////////////////////////// */
 #include "XRayIonicGasMix.hpp"
-#include "ArrayTable.hpp"
 #include "Atoms.hpp"
 #include "ComptonPhaseFunction.hpp"
 #include "Configuration.hpp"
@@ -20,7 +19,6 @@
 #include "StringUtils.hpp"
 #include "TextInFile.hpp"
 #include <tuple>
-#include <utility>
 
 ////////////////////////////////////////////////////////////////////
 
@@ -105,26 +103,26 @@ namespace
         return columns;
     }
 
-    struct PhotoAbsorbParam
+    struct PhotoAbsorbResource
     {
-        PhotoAbsorbParam(const Array& a)
+        PhotoAbsorbResource(const Array& a)
             : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), Eth(a[4]), E0(a[5]), sigma0(a[6]), ya(a[7]), P(a[8]), yw(a[9])
         {}
 
-        int ionIndex{-1};   // index of the ion
-        short Z;            // atomic number
-        short N;            // number of electrons
-        short n;            // principal quantum number of the shell
-        short l;            // orbital quantum number of the subshell
-        double Eth;         // subshell ionization threshold energy (eV)
-        double Emax = 5e5;  // maximum energy for validity of the formula (eV)
-        double E0;          // fit parameter (eV)
-        double sigma0;      // fit parameter (Mb = 10^-22 m^2)
-        double ya;          // fit parameter (1)
-        double P;           // fit parameter (1)
-        double yw;          // fit parameter (1)
-        double y0 = 0.;     // fit parameter (1)
-        double y1 = 0.;     // fit parameter (1)
+        int ionIndex{-1};                    // index of the ion
+        short Z;                             // atomic number
+        short N;                             // number of electrons
+        short n;                             // principal quantum number of the shell
+        short l;                             // orbital quantum number of the subshell
+        double Eth;                          // subshell ionization threshold energy (eV)
+        double E0;                           // fit parameter (eV)
+        double sigma0;                       // fit parameter (Mb = 10^-22 m^2)
+        double ya;                           // fit parameter (1)
+        double P;                            // fit parameter (1)
+        double yw;                           // fit parameter (1)
+        static constexpr double Emax = 5e5;  // maximum energy for validity of the formula (eV)
+        static constexpr double y0 = 0.;     // fit parameter (1)
+        static constexpr double y1 = 0.;     // fit parameter (1)
 
         double Es;
         double sigmamax;
@@ -154,9 +152,9 @@ namespace
         }
     };
 
-    struct FluorescenceParam
+    struct FluorescenceResource
     {
-        FluorescenceParam(const Array& a) : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), omega(a[4]), E(a[5]), W(a[6]) {}
+        FluorescenceResource(const Array& a) : Z(a[0]), N(a[1]), n(a[2]), l(a[3]), omega(a[4]), E(a[5]), W(a[6]) {}
 
         int paIndex{-1};  // index of the photo-absorption transition
         short Z;          // atomic number
@@ -168,16 +166,24 @@ namespace
         double W;         // FWHM of the Lorentz shape for the emitted photon (eV), or zero
     };
 
-    // Lyman recombination and resonant scattering parameters
-    struct LyParam
+    struct LymanResource
     {
-        LyParam(const Array& a) : Z(a[0]), Ly(a[1]), lamA(a[2]), lam(a[3]) {}
+        LymanResource(const Array& a) : Z(a[0]), Ly(a[1]), lamA(a[2]), lam(a[3]) {}
         int ionIndex{-1};  // index of the ion
         double sprob{-1};  // scatter probability after resonant scattering (<=1)
         short Z;           // atomic number
         short Ly;          // Lyman index (alpha1/2, alpha3/2, beta1/2, ...)
         double lamA;       // wavelength * Einstein A (m/s)
         double lam;        // wavelength (m)
+    };
+
+    struct LymanBranchResource
+    {
+        LymanBranchResource(const Array& a) : Z(a[0]), Lyu(a[1]), Lyl(a[2]), B(a[3]) {}
+        short Z;    // atomic number
+        short Lyu;  // upper Lyman index
+        short Lyl;  // lower Lyman index
+        double B;   // branching probability
     };
 }
 
@@ -856,46 +862,26 @@ void XRayIonicGasMix::setupSelfBefore()
             _com = new BoundComptonHelper(this);
             break;
     }
-
-    if (resonantScattering()) _dpf.initialize(random(), hasPolarizedScattering());
+    if (resonantScattering())
+    {
+        _dpf = new DipolePhaseFunction();
+        _dpf->initialize(random(), hasPolarizedScattering());
+    }
 
     // ------------ load resources ------------
 
-    // photo-absorption
-    auto pap = loadStruct<PhotoAbsorbParam, 10>(this, "Ionic_PA.txt", "photoabsorption data");
-    // fluoresence
-    auto flp = loadStruct<FluorescenceParam, 7>(this, "Ionic_FL.txt", "fluorescence data");
-    // hydrogen-like lyman scattering
-    vector<LyParam> lyp = loadStruct<LyParam, 4>(this, "Ionic_LY.txt", "lyman series data");
+    auto pap = loadStruct<PhotoAbsorbResource, 10>(this, "Ionic_PA.txt", "photoabsorption data");
+    auto flp = loadStruct<FluorescenceResource, 7>(this, "Ionic_FL.txt", "fluorescence data");
+    auto lyp = loadStruct<LymanResource, 4>(this, "Ionic_LY.txt", "lyman series data");
+    StoredTable<3> lyy(this, "Ionic_LY_Y.stab", "Z(1),Ly(1),T(K)", "Y(1)");
+    vector<LymanBranchResource> lybp;
     if (resonantScattering())
     {
-        _branchvvv.resize(numAtoms, numLy, numLy);
-        TextInFile branchFile(this, "Ionic_LY_B.txt", "branching probabilities", true);
-        for (int i = 0; i < 4; i++) branchFile.addColumn("");
-        Array row;
-        while (branchFile.readRow(row))
-        {
-            int Z = row[0];
-            int Lyu = row[1];
-            int Lyl = row[2];
-            double B = row[3];
-            _branchvvv(Z - 1, Lyu, Lyl) = B;
-        }
-
-        _lamZLyvv.resize(numAtoms, numLy);
-        for (auto ly : lyp) _lamZLyvv(ly.Z - 1, ly.Ly) = ly.lam;
-        _lamAZLyvv.resize(numAtoms, numLy);
-        for (auto ly : lyp) _lamAZLyvv(ly.Z - 1, ly.Ly) = ly.lamA;
-
-        _cumbranchvvv.resize(numAtoms, numLy, numLy + 1);
+        lybp = loadStruct<LymanBranchResource, 4>(this, "Ionic_LY_B.txt", "branching probabilities");
     }
-
-    // hydrogen-like lyman fluorescent yields (recombinaton followed by bound-bound emission)
-    StoredTable<3> lyy(this, "Ionic_LY_Y.stab", "Z(1),Ly(1),T(K)", "Y(1)");
 
     // ------------ preprocess resources ------------
 
-    // calculate and store the thermal velocities for each atomic number
     _vtherm.resize(numAtoms, 0.);
     for (int Z = 1; Z <= numAtoms; Z++) _vtherm[Z - 1] = sqrt(Constants::k() * temperature() / Atoms::mass(Z));
 
@@ -913,12 +899,12 @@ void XRayIonicGasMix::setupSelfBefore()
 
     // ------------ save used resources ------------
 
-    // parameters used in the setup
-    vector<PhotoAbsorbParam> photoAbsorbParams;
-    vector<FluorescenceParam> fluorescenceParams;
-    vector<LyParam> lyParams;
+    // resources that are used in the setup
+    vector<PhotoAbsorbResource> usedPap;
+    vector<FluorescenceResource> usedFlp;
+    vector<LymanResource> usedLyp;
 
-    // save ion parameters
+    // for each ion
     for (int i = 0; i < _numIons; i++)
     {
         auto& ion = _ionParams[i];
@@ -929,16 +915,16 @@ void XRayIonicGasMix::setupSelfBefore()
             if (pa.Z == ion.Z && pa.N == ion.N)
             {
                 pa.ionIndex = i;
-                photoAbsorbParams.push_back(pa);
+                usedPap.push_back(pa);
 
                 // add all FL for this PA
                 for (auto& fl : flp)
                 {
                     if (fl.Z == pa.Z && fl.N == pa.N && fl.n == pa.n && fl.l == pa.l)
                     {
-                        int p = photoAbsorbParams.size() - 1;
+                        int p = usedPap.size() - 1;
                         fl.paIndex = p;
-                        fluorescenceParams.push_back(fl);
+                        usedFlp.push_back(fl);
                     }
                 }
             }
@@ -952,79 +938,71 @@ void XRayIonicGasMix::setupSelfBefore()
                 if (ly.Z == ion.Z)
                 {
                     ly.ionIndex = i;
-                    lyParams.push_back(ly);
+                    usedLyp.push_back(ly);
                 }
             }
         }
     }
-    _numFluo = fluorescenceParams.size();
-    _numRes = lyParams.size();
+    _numFluo = usedFlp.size();
+    _numRes = usedLyp.size();
 
-    // ------------ calculate and store non-setup parameters ------------
+    // ------------ postprocess resources ------------
 
-    // fluorescence
-    _lambdafluov.resize(_numFluo);
-    _centralfluov.resize(_numFluo);
-    _widthfluov.resize(_numFluo);
-    _Zfluov.resize(_numFluo);
-    for (int k = 0; k != _numFluo; ++k)
-    {
-        const auto& fl = fluorescenceParams[k];
-        const auto& pa = photoAbsorbParams[fl.paIndex];
-        const auto& ion = _ionParams[pa.ionIndex];
-
-        _Zfluov[k] = ion.Z;
-        if (!fl.W)
-        {
-            // if the line shape has zero width, convert the central enery to the fixed wavelength
-            _lambdafluov[k] = wavelengthToFromEnergy(fl.E);
-        }
-        else
-        {
-            // if the line shape has nonzero width, copy the parameters of the line shape
-            // so that we can sample from the Lorentz distribution in energy space
-            _centralfluov[k] = fl.E;
-            _widthfluov[k] = fl.W / 2.;  // convert from FWHM to HWHM
-        }
-    }
-
-    // resonant scattering
-    _Zresv.resize(_numRes);
-    _Lyresv.resize(_numRes);
-    _aresv.resize(_numRes);
-    _centerresv.resize(_numRes);
-    for (int r = 0; r != _numRes; ++r)
-    {
-        auto& ly = lyParams[r];
-
-        // branching probability
-        Array& pLyl = _branchvvv(ly.Z - 1, ly.Ly);
-        Array PLyl;
-        ly.sprob = NR::cdf(PLyl, pLyl);
-        _cumbranchvvv(ly.Z - 1, ly.Ly) = PLyl;
-
-        // resonant scattering parameters
-        double vth = M_SQRT2 * vtherm(ly.Z);
-        double a = ly.lamA / 4. / M_PI / vth;
-        _Zresv[r] = ly.Z;
-        _Lyresv[r] = ly.Ly;
-        _aresv[r] = a;
-        _centerresv[r] = ly.lam;
-    }
-
-    // ------------ thermal dispersion ------------
-
+    // Photo-absorption
     // calculate the parameters for the sigmoid function approximating the convolution with a Gaussian
     // at the threshold energy for each cross section record, and store the result into a temporary vector;
     // the information includes the thermal energy dispersion at the threshold energy and
     // the intrinsic cross section at the threshold energy plus twice this energy dispersion
     vector<std::pair<double, double>> sigmoidv;
-    sigmoidv.reserve(photoAbsorbParams.size());
-    for (auto& pa : photoAbsorbParams)
+    sigmoidv.reserve(usedPap.size());
+    for (auto& pa : usedPap)
     {
         auto& ion = _ionParams[pa.ionIndex];
         pa.Es = pa.Eth * vtherm(ion.Z) / Constants::c();
         pa.sigmamax = pa.photoAbsorbSection(pa.Eth + 2. * pa.Es);
+    }
+
+    // ------------ calculate persistent data ------------
+    // usedFlp and usedLyp need to be in the same order as the persistent params!
+
+    // Fluorescence
+    _fluorescenceParams.resize(_numFluo);
+    for (int k = 0; k != _numFluo; ++k)
+    {
+        const auto& uflp = usedFlp[k];
+        auto& flp = _fluorescenceParams[k];
+
+        flp.Z = uflp.Z;
+        flp.lambda = wavelengthToFromEnergy(uflp.E);
+        flp.width = uflp.W / 2.;  // convert from FWHM to HWHM
+    }
+
+    // Resonant scattering
+    if (resonantScattering())
+    {
+        for (int r = 0; r != _numRes; ++r)
+        {
+            const auto& ulyp = usedLyp[r];
+            auto& lyp = _resonantParams[r];
+
+            lyp.Z = ulyp.Z;
+            lyp.Ly = ulyp.Ly;
+            lyp.lambda = ulyp.lam;
+            lyp.a = ulyp.lamA / 2. * M_SQRT2 / M_PI / vtherm(ulyp.Z);
+
+            // branching probability
+            vector<double> pLyl(numLy);
+            for (int i = 0; i != numLy; ++i)
+            {
+                if (lyp.Ly == i)
+                {
+                    pLyl[i] = lybp[i].B;
+                }
+            }
+
+            Array PLyl;
+            lyp.branching = NR::cdf(PLyl, pLyl);
+        }
     }
 
     // ------------ wavelength grid ------------
@@ -1058,7 +1036,7 @@ void XRayIonicGasMix::setupSelfBefore()
 
     // add wavelength points around the threshold energies for all transitions
     int index = 0;
-    for (const auto& pa : photoAbsorbParams)
+    for (const auto& pa : usedPap)
     {
         double Es = sigmoidv[index++].first;
         for (double delta : {-2., -4. / 3., -2. / 3., 0., 2. / 3., 4. / 3., 2.})
@@ -1069,7 +1047,7 @@ void XRayIonicGasMix::setupSelfBefore()
     }
 
     // add the fluorescence emission wavelengths
-    for (const auto& fl : fluorescenceParams)
+    for (const auto& fl : usedFlp)
     {
         double lambda = wavelengthToFromEnergy(fl.E);
         if (range.contains(lambda)) lambdav.push_back(lambda);
@@ -1087,18 +1065,18 @@ void XRayIonicGasMix::setupSelfBefore()
 
     // derive a wavelength grid that will be used for converting a wavelength to an index in the above array;
     // the grid points are shifted to the left of the actual sample points to approximate rounding
-    _lambdav.resize(numLambda);
-    _lambdav[0] = lambdav[0];
+    _lambda.resize(numLambda);
+    _lambda[0] = lambdav[0];
     for (int ell = 1; ell != numLambda; ++ell)
     {
-        _lambdav[ell] = sqrt(lambdav[ell] * lambdav[ell - 1]);
+        _lambda[ell] = sqrt(lambdav[ell] * lambdav[ell - 1]);
     }
 
     // ------------ extinction ------------
 
     // calculate the extinction cross section at every wavelength; to guarantee that the cross section is zero
     // for wavelengths outside our range, leave the values for the three outer wavelength points at zero
-    _sigmaextv.resize(numLambda);
+    _sigmaext.resize(numLambda);
     for (int ell = 1; ell < numLambda - 2; ++ell)
     {
         double lambda = lambdav[ell];
@@ -1112,14 +1090,14 @@ void XRayIonicGasMix::setupSelfBefore()
         }
 
         // photo-absorption and fluorescence
-        for (const auto& pa : photoAbsorbParams)
+        for (const auto& pa : usedPap)
         {
             double E = wavelengthToFromEnergy(lambda);
             sigma += pa.photoAbsorbThermalSection(E) * _abundances[pa.ionIndex];
         }
 
         // resonant scattering
-        for (const auto& rs : lyParams)
+        for (const auto& rs : usedLyp)
         {
             double vth = M_SQRT2 * vtherm(rs.Z);
             double a = rs.lamA / 4. / M_PI / vth;
@@ -1127,17 +1105,18 @@ void XRayIonicGasMix::setupSelfBefore()
             sigma += LyUtils::section(vth, a, rs.lam, g, lambda) * _abundances[rs.ionIndex];
         }
 
-        _sigmaextv[ell] = sigma;
+        _sigmaext[ell] = sigma;
     }
 
     // ------------ scattering ------------
 
     // make room for the scattering cross section and the cumulative fluorescence/scattering probabilities
-    _sigmascav.resize(numLambda);
-    _cumprobscavv.resize(numLambda, 0);
+    _sigmasca.resize(numLambda);
+    _cumsigmasca.resize(numLambda, 0);
 
     // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-    Array sections(2 * _numIons + _numFluo + _numRes);
+    int numInteractions = 2 * _numIons + _numFluo + _numRes;
+    Array sections(numInteractions);
 
     // calculate the above for every wavelength; as before, leave the values for the outer wavelength points at zero
     for (int ell = 1; ell < numLambda - 2; ++ell)
@@ -1157,15 +1136,15 @@ void XRayIonicGasMix::setupSelfBefore()
         // fluorescence: iterate over both cross section and fluorescence parameter sets in sync
         for (int k = 0; k < _numFluo; k++)
         {
-            const auto& fl = fluorescenceParams[k];
-            const auto& pa = photoAbsorbParams[fl.paIndex];
+            const auto& fl = usedFlp[k];
+            const auto& pa = usedPap[fl.paIndex];
             double section = pa.photoAbsorbThermalSection(E) * _abundances[pa.ionIndex] * fl.omega;
             sections[2 * _numIons + k] = section;
         }
 
         for (int r = 0; r < _numRes; r++)
         {
-            const auto& rs = lyParams[r];
+            const auto& rs = usedLyp[r];
             double vth = M_SQRT2 * vtherm(rs.Z);
             double a = rs.lamA / 4. / M_PI / vth;
             double g = (rs.Ly % 2) + 1.;
@@ -1174,7 +1153,7 @@ void XRayIonicGasMix::setupSelfBefore()
         }
 
         // determine the normalized cumulative probability distribution and the cross section
-        _sigmascav[ell] = NR::cdf(_cumprobscavv[ell], sections);
+        _sigmasca[ell] = NR::cdf(_cumsigmasca[ell], sections);
     }
 }
 
@@ -1200,13 +1179,14 @@ XRayIonicGasMix::~XRayIonicGasMix()
 {
     delete _ray;
     delete _com;
+    if (resonantScattering()) delete _dpf;
 }
 
 ////////////////////////////////////////////////////////////////////
 
 int XRayIonicGasMix::indexForLambda(double lambda) const
 {
-    return NR::locateClip(_lambdav, lambda);
+    return NR::locateClip(_lambda, lambda);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1277,21 +1257,21 @@ double XRayIonicGasMix::mass() const
 double XRayIonicGasMix::sectionAbs(double lambda) const
 {
     int index = indexForLambda(lambda);
-    return _sigmaextv[index] - _sigmascav[index];
+    return _sigmaext[index] - _sigmasca[index];
 }
 
 ////////////////////////////////////////////////////////////////////
 
 double XRayIonicGasMix::sectionSca(double lambda) const
 {
-    return _sigmascav[indexForLambda(lambda)];
+    return _sigmasca[indexForLambda(lambda)];
 }
 
 ////////////////////////////////////////////////////////////////////
 
 double XRayIonicGasMix::sectionExt(double lambda) const
 {
-    return _sigmaextv[indexForLambda(lambda)];
+    return _sigmaext[indexForLambda(lambda)];
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1328,7 +1308,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
     {
         scatinfo->valid = true;
 
-        scatinfo->species = NR::locateClip(_cumprobscavv[indexForLambda(lambda)], random()->uniform());
+        scatinfo->species = NR::locateClip(_cumsigmasca[indexForLambda(lambda)], random()->uniform());
 
         // Rayleigh or Compton scattering
         if (scatinfo->species < 2 * _numIons)
@@ -1336,44 +1316,46 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
             // Rayleigh or Compton scattering
             int i = scatinfo->species % _numIons;
             const auto& ion = _ionParams[i];
-            double vth = vtherm(ion.Z);
-            scatinfo->velocity = vth * random()->maxwell();
+            scatinfo->velocity = vtherm(ion.Z) * random()->maxwell();
         }
         // Fluorescenct emission (scattering)
         else if (scatinfo->species < 2 * _numIons + _numFluo)
         {
             int k = scatinfo->species - 2 * _numIons;
-            int Z = _Zfluov[k];
-            double vth = vtherm(Z);
+            auto flp = _fluorescenceParams[k];
+            double lambda = flp.lambda;
+            double width = flp.width;
 
-            if (temperature() > 0.) scatinfo->velocity = vth * random()->maxwell();
+            scatinfo->velocity = vtherm(flp.Z) * random()->maxwell();
 
-            if (_lambdafluov[k])
-            {
-                // for a zero-width line, simply copy the central wavelength
-                scatinfo->lambda = _lambdafluov[k];
-            }
-            else
+            if (width > 0.)
             {
                 // otherwise sample a wavelength from the Lorentz line shape in energy space;
                 // the tails of the Lorentz distribition are very long, occasionaly resulting in negative energies;
                 // therefore we loop until the sampled wavelength is meaningful
                 while (true)
                 {
-                    scatinfo->lambda = wavelengthToFromEnergy(_centralfluov[k] + _widthfluov[k] * random()->lorentz());
+                    double center = wavelengthToFromEnergy(lambda);
+                    scatinfo->lambda = wavelengthToFromEnergy(center + width * random()->lorentz());
                     if (nonZeroRange.contains(scatinfo->lambda)) break;
                 }
+            }
+            else
+            {
+                // for a zero-width line, simply copy the central wavelength
+                scatinfo->lambda = lambda;
             }
         }
         // Resonant Lyman scattering
         else
         {
             int r = scatinfo->species - 2 * _numIons - _numFluo;
-            short Z = _Zresv[r];
-            short lyu = _Lyresv[r];
+            auto lyp = _resonantParams[r];
+            int Z = lyp.Z;
+            int lyu = lyp.Ly;
+            double lambda = lyp.lambda;
+            double a = lyp.a;
             double vth = M_SQRT2 * vtherm(Z);
-            double a = _aresv[r];
-            double center = _centerresv[r];
             bool J32 = lyu % 2 == 1;  // true if Ju=3/2 -> happens at odd Lyman index
 
             // probability of decaying from Lyu to Lyl

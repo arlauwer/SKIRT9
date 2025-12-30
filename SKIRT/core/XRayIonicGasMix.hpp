@@ -136,53 +136,48 @@ public:
         short N;  // number of electrons
     };
 
+    // Rayleigh params -> IonParam
+    // Compton params -> IonParam
+    // Fluorescence (+Lyman RC) params
+    struct FluorescenceParam
+    {
+        unsigned char Z;  // atomic number
+        double lambda;    // wavelength (m)
+        double width;     // width (eV)
+    };
+    // Resonant Lyman params
+    struct ResonantParam
+    {
+        unsigned char Z;              // atomic number
+        unsigned char Ly;             // Lyman index (alpha1/2, alpha3/2, beta1/2, ...)
+        double lambda;                // wavelength (m)
+        double a;                     // Voigt parameter
+        vector<double> cumbranching;  // normalized cumulative branching
+        double branching;             // total branching probability
+    };
+
 private:
-    int _numIons;  // total number of ions
-    int _numFluo;  // total number of fluorescence transitions
-    int _numRes;   // total number of Lyman resonant scattering transitions
+    int _numIons;  // number of ions
+    int _numFluo;  // number of fluorescence (+Lyman RC) transitions
+    int _numRes;   // number of Lyman resonant scattering transitions
 
-    vector<IonParam> _ionParams;  // all the used ion parameters
+    // persistent data
+    vector<IonParam> _ionParams;
+    vector<FluorescenceParam> _fluorescenceParams;
+    vector<ResonantParam> _resonantParams;
+    vector<double> _vtherm;  // indexed on Z
 
-    // all data members are precalculated in setupSelfAfter()
-
-    // wavelength grid (shifted to the left of the actually sampled points to approximate rounding)
-    Array _lambdav;  // indexed on wav
-
-    // total extinction and scattering cross sections
-    Array _sigmaextv;  // indexed on wav
-    Array _sigmascav;  // indexed on wav
-
-    // emission parameters for each of the fluorescence transitions:
-    // if wavelength is nonzero, all photons are emitted at this wavelength;
-    // if wavelength is zero, sample wavelength from Lorentz shape defined by central energy and HWHM = FWHM / 2
-    vector<double> _lambdafluov;   // indexed on fluo
-    vector<double> _centralfluov;  // indexed on fluo
-    vector<double> _widthfluov;    // indexed on fluo
-    vector<short> _Zfluov;         // indexed on fluo
-
-    // resonant scattering parameters for each of the Lyman transitions
-    vector<short> _Zresv;        // indexed on res
-    vector<short> _Lyresv;       // indexed on res (up to 18: a1/2, a3/2, b1/2, ...)
-    vector<double> _aresv;       // indexed on res
-    vector<double> _centerresv;  // indexed on res
-    ArrayTable<3> _branchvvv;    // indexed on Z, Lyu, Lyl (numAtom, numLy, numLy)
-    ArrayTable<2> _lamZLyvv;     // indexed on Z, Lyu (numAtom, numLy)
-    ArrayTable<2> _lamAZLyvv;    // indexed on Z, Lyu (numAtom, numLy)
-
-    // thermal velocities and normalized cumulative probability distributions for the scattering channnels:
-    //   - Rayleigh scattering by bound electrons for each atom
-    //   - Compton scattering by bound electrons for each atom
-    //   - fluorescence transitions
-    ArrayTable<2> _cumprobscavv;  // indexed on wav, 2*ion + fluo + res
-    ArrayTable<3> _cumbranchvvv;  // indexed on Z, Lyu, Lyl (numAtom, numLy, numLy+1)
-
-    vector<double> _vtherm;  // indexed on atom
+    // fine wavelength grid
+    Array _lambda;  // indexed on lambda
+    // cross sections
+    Array _sigmaext;             // indexed on lambda
+    Array _sigmasca;             // indexed on lambda
+    ArrayTable<2> _cumsigmasca;  // indexed on lambda. interactions (2*numIons + numFluo + numRes)
 
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
-
-    DipolePhaseFunction _dpf;
+    DipolePhaseFunction* _dpf{nullptr};
 };
 
 #endif
