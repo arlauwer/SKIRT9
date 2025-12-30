@@ -1374,9 +1374,19 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
                 vth = M_SQRT2 * vtherm(llyp.Z);
                 J32 = lower % 2 == 1;
 
+                lambda = llyp.lambda;
                 scatinfo->lambda = llyp.lambda;
             }
+            else
+            {
+                scatinfo->lambda = 0.;  // explicitly ensure we don't use it
+            }
 
+            // I will sample from a Voigt profile even for incoherent scattering! Make sure this is inteded behaviour!
+            // The wavelength will be set to the central wavelength but there is still a Voigt profile used for both the
+            // receiving and emitting wavelength shifts!
+
+            // sample a atom velocity from Voigt profile
             std::tie(scatinfo->velocity, scatinfo->dipole) =
                 LyUtils::sampleAtomVelocity(vth, a, center, J32, lambda, temperature(), state->numberDensity(),
                                             pp->direction(), config(), random());
@@ -1440,8 +1450,7 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
             I = 1.;
 
         // if incoherent (i.e. branching occurs)
-        if (scatinfo->species == 100000)  // TEMP, NEEDS A BETTER SOLUTION
-            lambda = scatinfo->lambda;
+        if (scatinfo->lambda != 0.) lambda = scatinfo->lambda;
 
         lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
         return true;
@@ -1507,8 +1516,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
         }
 
         // if incoherent (i.e. branching occurs)
-        if (scatinfo->species == 100000)  // TEMP, NEEDS A BETTER SOLUTION
-            lambda = scatinfo->lambda;
+        if (scatinfo->lambda != 0.) lambda = scatinfo->lambda;
 
         lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
     }
