@@ -166,7 +166,7 @@ double LyaNeutralHydrogenGasMix::opacityExt(double lambda, const MaterialState* 
 
 ////////////////////////////////////////////////////////////////////
 
-void LyaNeutralHydrogenGasMix::peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda,
+bool LyaNeutralHydrogenGasMix::peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda,
                                                  Direction bfkobs, Direction bfky, const MaterialState* state,
                                                  const PhotonPacket* pp) const
 {
@@ -193,6 +193,8 @@ void LyaNeutralHydrogenGasMix::peeloffScattering(double& I, double& Q, double& U
 
     // Doppler-shift the photon packet wavelength into and out of the atom frame
     lambda = LyUtils::shiftWavelength(lambda, scatinfo->velocity, pp->direction(), bfkobs);
+
+    return false;
 }
 
 ////////////////////////////////////////////////////////////////////
