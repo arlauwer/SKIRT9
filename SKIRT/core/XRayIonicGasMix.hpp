@@ -81,6 +81,8 @@ public:
 
     bool hasScatteringDispersion() const override;
 
+    bool scatteringEmulatesSecondaryEmission() const override;
+
     bool hasLineEmission() const override;
 
     //============= Medium state setup =============
@@ -133,7 +135,7 @@ public:
         IonParam(short Z, short N) : Z(Z), N(N) {}
 
         short Z;  // atomic number
-        short N;  // number of electrons
+        short N;  // number of electrons (technically not used, but might be when Compton accounts for this)
     };
 
     // Rayleigh params -> IonParam
@@ -153,7 +155,6 @@ public:
         double lambda;        // wavelength (m)
         double a;             // Voigt parameter
         Array cumbranching;   // normalized cumulative branching
-        double bprob;         // total branching probability
     };
 
 private:

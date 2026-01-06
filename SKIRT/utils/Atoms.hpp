@@ -53,7 +53,7 @@ public:
         // get ion parameters
         int Z = atomMap.at(match[1].str());
         int N = Z - std::stoi(match[2].str());
-        if (N < 1 || N > Z) throw FATALERROR("Invalid ion format: " + ion);
+        if (N < 0 || N > Z) throw FATALERROR("Invalid ion format: " + ion);
         // add ion parameters
         return std::make_pair(Z, N);
     }
