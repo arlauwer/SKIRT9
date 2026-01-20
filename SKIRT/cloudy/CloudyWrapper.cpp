@@ -84,9 +84,15 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
     ss << in.rdbuf();
     in.close();
     _template = ss.str();
+    if (_template.empty()) throw FATALERROR("The template file is empty");
 
     _space = new hnswlib::CloudySpace(_dim, Cloudy_dist);
     _hnswPath = StringUtils::joinPaths(_basePath, "hnsw.bin");
+
+    _empty.temperature = 0.;
+    _empty.abundances.resize(cloudy::numIons, 0.);
+    _empty.opacities.resize(cloudy::numBins, 0.);
+    _empty.emissivities.resize(cloudy::numBins, 0.);
 
     // potentially load existing data
     load();
@@ -95,6 +101,8 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
 CloudyData CloudyWrapper::query(double hden, double metallicity, const Array& radField, double ins)
 {
     if (radField.size() != cloudy::numBins) throw FATALERROR("CloudyWrapper::query: wrong number of radfield values");
+
+    if (hden == 0.) return _empty;
 
     // create query point
     vector<double> point(_dim);

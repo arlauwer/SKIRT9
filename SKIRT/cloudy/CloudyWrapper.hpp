@@ -56,6 +56,9 @@ private:
     std::unordered_map<size_t, std::atomic<bool>> _dones;
 
     std::mutex _mutex;
+
+    // the cloudy data for an empty cell
+    CloudyData _empty;
 };
 
 #endif

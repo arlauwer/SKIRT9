@@ -794,14 +794,17 @@ void XRayIonicGasMix::setupSelfBefore()
     TextInFile wav(this, "Cloudy_wav.txt", "Cloudy wavelengths", true);
     wav.addColumn("lambda", "wavelength", "Ryd");
     _lambda = wav.readAllColumns()[0];
-    _lambda = cloudy::Rtm / _lambda;
-
-    // reverse std::valarray
-    std::reverse(std::begin(_lambda), std::end(_lambda));
 
     _numLambda = _lambda.size();
     if (_lambda[0] > _lambda[_numLambda - 1])
         throw FATALERROR("The tabulated opacity wavelength grid must be ascending");
+
+    auto range = Range(_lambda[0], _lambda[_numLambda - 1]);
+    if (!range.contains(config()->sourceWavelengthRange()))
+    {
+        throw FATALERROR(
+            "The source wavelength range must be contained in the tabulated opacity wavelength grid (1 to 1e4 Ryd)");
+    }
 
     // ---- continuum emissivity ---- //
     vector<double> lambdaCv(std::begin(_lambda), std::end(_lambda));
@@ -882,25 +885,27 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     vector<StateVariable> result{StateVariable::numberDensity(), StateVariable::temperature(),
                                  StateVariable::metallicity()};
 
+    // To save memory here, we could have some system that allows to only allocate memory for non-empty cells.
+    // I.e. have these state variables for only cells with non-zero number density.
+
     // next available custom variable index
     int index = 0;
 
     // State variables
     // abundances:      numIons
     // vtherm:          numAtoms
-    // kappaabsC:       numOpac
-    // kappascaC:       numOpac
-    // cumprobscaC:     numOpac x numInteractions+1 (+1 for cumulative)
-    // emissivityC:     numEmis + 2
+    // kappaabsC:       _numLambda
+    // kappascaC:       _numLambda
+    // cumprobscaC:     _numLambda * (numInter+1) // this is huge and can probably be reduced since probability is proportional to abundance (i.e. can be sampled during run instead of during setup)
+    // emissivityC:     _numLambda + 2
     // LINES WIP
 
     const_cast<XRayIonicGasMix*>(this)->_indexAbundances = index;
-    for (int Z = 1; Z <= numAtoms; ++Z)
-        for (int N = 0; N != Z; ++N)
-            result.push_back(StateVariable::custom(index++, "abundance", "numbervolumedensity"));
+    for (int i = 0; i < numIons; i++)
+        result.push_back(StateVariable::custom(index++, "abundance", "numbervolumedensity"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexThermalVelocity = index;
-    result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
+    for (int a = 0; a < numAtoms; a++) result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexKappaAbs = index;
     for (int l = 0; l < _numLambda; l++)
@@ -948,8 +953,7 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, do
     Z = Z >= 0. ? Z : defaultMetallicity;
     state->setMetallicity(Z);
 
-    int numBins = config()->radiationFieldWLG()->numBins();
-    Array J(numBins);
+    Array J(cloudy::numBins);
     J = 1e10;  // temporary really high for now
 
     const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
@@ -957,7 +961,7 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, do
 
 ////////////////////////////////////////////////////////////////////
 
-UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Array& Jv) const
+UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Array& J) const
 {
     UpdateStatus status;
 
@@ -967,7 +971,7 @@ UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Ar
     double n = state->numberDensity();  // 1/m3
     double Z = state->metallicity();
 
-    double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, Jv);
+    double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
 
     if (conv < 1e-3)
         status.updateConverged();
