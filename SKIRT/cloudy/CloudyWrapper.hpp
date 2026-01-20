@@ -40,7 +40,7 @@ private:
 
     // hnsw
     int _dim{2 + cloudy::numBins};
-    size_t _max_elements{1000};  // set this properly!
+    size_t _max_elements{100000};  // set this properly!
     int _M{16};
     int _ef_const{100};
     size_t _k{4};

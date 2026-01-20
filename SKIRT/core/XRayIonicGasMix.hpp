@@ -8,6 +8,7 @@
 
 #include "CloudyWrapper.hpp"
 #include "EmittingGasMix.hpp"
+#include "ItemInfo.hpp"
 #include "Log.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
@@ -29,9 +30,12 @@ class XRayIonicGasMix : public EmittingGasMix
     ITEM_CONCRETE(XRayIonicGasMix, EmittingGasMix, "Ionised gas mix")
         ATTRIBUTE_TYPE_INSERT(XRayIonicGasMix, "GasMix,CustomMediumState")
 
+        PROPERTY_STRING(libLocation, "Cloudy library location")
+        ATTRIBUTE_DISPLAYED_IF(libLocation, "Level3")
+
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
-        ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level3")
+        ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level2")
     ITEM_END()
 
     //============= Construction - Setup - Destruction =============

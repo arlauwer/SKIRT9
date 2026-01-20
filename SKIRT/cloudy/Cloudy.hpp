@@ -9,8 +9,12 @@
 
 namespace cloudy
 {
-    constexpr int numBins = 2;
-    constexpr std::array<double, numBins + 1> edges{1e4, 1e1, 1e0};
+    constexpr int numBins = 24;
+    constexpr std::array<double, numBins + 1> edges{
+        1.00000000e+04, 6.81292069e+03, 4.64158883e+03, 3.16227766e+03, 2.15443469e+03, 1.46779927e+03, 1.00000000e+03,
+        6.81292069e+02, 4.64158883e+02, 3.16227766e+02, 2.15443469e+02, 1.46779927e+02, 1.00000000e+02, 6.81292069e+01,
+        4.64158883e+01, 3.16227766e+01, 2.15443469e+01, 1.46779927e+01, 1.00000000e+01, 6.81292069e+00, 4.64158883e+00,
+        3.16227766e+00, 2.15443469e+00, 1.46779927e+00, 1.00000000e+00};
     constexpr int numIons = 465;
     constexpr double minRad = 1e-10;
     constexpr double stc = 1e3;                // W/m2 -> erg/s/cm2

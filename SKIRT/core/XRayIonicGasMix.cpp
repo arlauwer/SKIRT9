@@ -9,13 +9,12 @@
 #include "Constants.hpp"
 #include "DipolePhaseFunction.hpp"
 #include "FatalError.hpp"
-#include "FilePaths.hpp"
 #include "ListWavelengthGrid.hpp"
 #include "MaterialState.hpp"
 #include "NR.hpp"
 #include "Random.hpp"
 #include "Range.hpp"
-#include "StringUtils.hpp"
+#include "System.hpp"
 #include <map>
 #include <regex>
 
@@ -56,6 +55,7 @@ namespace
         return ions;
     }
     const auto ions = initIons();
+    constexpr int numInter = 2 * numIons;  // Compton and Rayleigh scattering
 
     constexpr double vtherm(double T, double amu)
     {
@@ -784,6 +784,9 @@ void XRayIonicGasMix::setupSelfBefore()
             break;
     }
 
+    string lib = libLocation();
+    if (!System::isDir(lib)) throw FATALERROR("The Cloudy library location is not a directory: " + lib);
+
     Array rad = config()->radiationFieldWLG()->lambdav();
     if (rad.size() != cloudy::numBins)
         throw FATALERROR("The radiation field wavelength grid must have the same number of bins as the table");
@@ -804,7 +807,7 @@ void XRayIonicGasMix::setupSelfBefore()
     vector<double> lambdaCv(std::begin(_lambda), std::end(_lambda));
     if (!_emissionGrid) _emissionGrid = new ListWavelengthGrid(this, lambdaCv, 0., true, true);
 
-    _cloudyWrapper.setup(StringUtils::dirPath(FilePaths::resource("template.in")), _lambda);
+    _cloudyWrapper.setup(lib, _lambda);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -887,7 +890,7 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     // vtherm:          numAtoms
     // kappaabsC:       numOpac
     // kappascaC:       numOpac
-    // cumprobscaC:     numOpac x 2*numIons+1 (+1 for cumulative)
+    // cumprobscaC:     numOpac x numInteractions+1 (+1 for cumulative)
     // emissivityC:     numEmis + 2
     // LINES WIP
 
@@ -909,7 +912,7 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 
     const_cast<XRayIonicGasMix*>(this)->_indexKappaScaCum = index;
     for (int l = 0; l < _numLambda; l++)
-        for (int i = 0; i < 2 * numIons + 1; ++i)
+        for (int i = 0; i < numInter + 1; ++i)
             result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexEmissivity = index;
@@ -929,8 +932,8 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 #define getKappaAbs(l) custom(_indexKappaAbs + (l))
 #define setKappaSca(l, value) setCustom(_indexKappaSca + (l), (value))
 #define getKappaSca(l) custom(_indexKappaSca + (l))
-#define setKappaScaCum(l, index, value) setCustom(_indexKappaScaCum + (l) * 2 * numAtoms + (index), (value))
-#define getKappaScaCum(l, index) custom(_indexKappaScaCum + (l) * 2 * numAtoms + (index))
+#define setKappaScaCum(l, index, value) setCustom(_indexKappaScaCum + (l) * numInter + (index), (value))
+#define getKappaScaCum(l, index) custom(_indexKappaScaCum + (l) * numInter + (index))
 #define setEmissivity(l, value) setCustom(_indexEmissivity + (l), (value))
 #define getEmissivity(l) custom(_indexEmissivity + (l))
 
@@ -990,9 +993,18 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
     double ins = (4. * M_PI * J * radWidth).sum();  // W/m2/m/sr -> W/m2 (integrated mean intensity)
     CloudyData cloudy = _cloudyWrapper.query(n, Z, J, ins);
 
+    // temperature
     double temp = cloudy.temperature;
     state->setTemperature(temp);
 
+    // thermal velocity
+    for (int i = 0; i < numAtoms; i++)
+    {
+        double v = vtherm(temp, atomicMasses[i]);
+        state->setVTherm(i, v);
+    }
+
+    // abundances
     Array prevAbund(numIons);
     for (int i = 0; i < numIons; i++)
     {
@@ -1002,12 +1014,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
         state->setAbundance(i, abund);
     }
 
-    for (int i = 0; i < numAtoms; i++)
-    {
-        double v = vtherm(temp, atomicMasses[i]);
-        state->setVTherm(i, v);
-    }
-
+    // opacities and scattering interactions
     for (int o = 0; o < _numLambda; o++)
     {
         double lambda = _lambda[o];
@@ -1018,7 +1025,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
 
         // Scattering
         // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-        Array kappaScaFractions(2 * numIons);
+        Array kappaScaFractions(numInter);
         Array kappaScaCum;
 
         // bound electron scattering
@@ -1036,12 +1043,13 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
         double kappaSca = NR::cdf(kappaScaCum, kappaScaFractions);
 
         state->setKappaSca(o, kappaSca);
-        for (int i = 0; i < 2 * numIons + 1; i++)
+        for (int i = 0; i < numInter + 1; i++)
         {
             state->setKappaScaCum(o, i, kappaScaCum[i]);
         }
     }
 
+    // emissivities
     for (int e = 0; e < _numLambda; e++)
     {
         double lambda = _lambda[e];
@@ -1049,7 +1057,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
         state->setEmissivity(e, emi);
     }
 
-    // calculate the amount of cells that were clipped (i.e. not interpolated in the lookup table)
+    // convergence
     double conv = 0.;
     for (int i = 0; i < numIons; i++)
     {
@@ -1125,8 +1133,8 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
         int lam = NR::locateClip(_lambda, lambda);  // this should (almost) never have to clip
         // scattering can only happen if opacity is non-zero, so lambda should be in range of _lambdaC
         // maybe some Doppler shift but a simple clip should be sufficient
-        Array kappaScaCum(2 * numIons + 1);
-        for (int i = 0; i < 2 * numIons + 1; i++) kappaScaCum[i] = state->getKappaScaCum(lam, i);
+        Array kappaScaCum(numInter + 1);
+        for (int i = 0; i < numInter + 1; i++) kappaScaCum[i] = state->getKappaScaCum(lam, i);
 
         scatinfo->species = NR::locateClip(kappaScaCum, random()->uniform());
 
@@ -1147,7 +1155,7 @@ void XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     setScatteringInfoIfNeeded(scatinfo, lambda, state);
 
     // if we have dispersion, for electron scattering, adjust the incoming wavelength to the electron rest frame
-    if (state->temperature() > 0. && scatinfo->species < static_cast<int>(2 * numIons))
+    if (state->temperature() > 0.)
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
 
     // Rayleigh scattering in electron rest frame; no support for polarization
@@ -1177,7 +1185,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
     setScatteringInfoIfNeeded(scatinfo, lambda, state);
 
     // if we have dispersion, for electron scattering, adjust the incoming wavelength to the electron rest frame
-    if (state->temperature() > 0. && scatinfo->species < static_cast<int>(2 * numIons))
+    if (state->temperature() > 0.)
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
 
     // room for the outgoing direction
