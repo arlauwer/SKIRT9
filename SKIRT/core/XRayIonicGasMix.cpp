@@ -791,15 +791,17 @@ void XRayIonicGasMix::setupSelfBefore()
     if (rad.size() != cloudy::numBins)
         throw FATALERROR("The radiation field wavelength grid must have the same number of bins as the table");
 
-    TextInFile wav(this, "Cloudy_wav.txt", "Cloudy wavelengths", true);
+    TextInFile wav(this, "cloudy_wav.txt", "Cloudy wavelengths", true);
     wav.addColumn("lambda", "wavelength", "Ryd");
     _lambda = wav.readAllColumns()[0];
 
-    _numLambda = _lambda.size();
-    if (_lambda[0] > _lambda[_numLambda - 1])
+    if (_lambda.size() != cloudy::numLambda)
+        throw FATALERROR(
+            "The tabulated opacity wavelength grid must have the same number of wavelengths as the cloudy outputs");
+    if (_lambda[0] > _lambda[cloudy::numLambda - 1])
         throw FATALERROR("The tabulated opacity wavelength grid must be ascending");
 
-    auto range = Range(_lambda[0], _lambda[_numLambda - 1]);
+    auto range = Range(_lambda[0], _lambda[cloudy::numLambda - 1]);
     if (!range.contains(config()->sourceWavelengthRange()))
     {
         throw FATALERROR(
@@ -894,10 +896,10 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     // State variables
     // abundances:      numIons
     // vtherm:          numAtoms
-    // kappaabsC:       _numLambda
-    // kappascaC:       _numLambda
-    // cumprobscaC:     _numLambda * (numInter+1) // this is huge and can probably be reduced since probability is proportional to abundance (i.e. can be sampled during run instead of during setup)
-    // emissivityC:     _numLambda + 2
+    // kappaabsC:       cloudy::numLambda
+    // kappascaC:       cloudy::numLambda
+    // cumprobscaC:     cloudy::numLambda * (numInter+1) // this is huge and can probably be reduced since probability is proportional to abundance (i.e. can be sampled during run instead of during setup)
+    // emissivityC:     cloudy::numLambda + 2
     // LINES WIP
 
     const_cast<XRayIonicGasMix*>(this)->_indexAbundances = index;
@@ -908,20 +910,20 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
     for (int a = 0; a < numAtoms; a++) result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexKappaAbs = index;
-    for (int l = 0; l < _numLambda; l++)
+    for (int l = 0; l < cloudy::numLambda; l++)
         result.push_back(StateVariable::custom(index++, "absorption opacity", "opacity"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexKappaSca = index;
-    for (int l = 0; l < _numLambda; l++)
+    for (int l = 0; l < cloudy::numLambda; l++)
         result.push_back(StateVariable::custom(index++, "scattering opacity", "opacity"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexKappaScaCum = index;
-    for (int l = 0; l < _numLambda; l++)
+    for (int l = 0; l < cloudy::numLambda; l++)
         for (int i = 0; i < numInter + 1; ++i)
             result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
 
     const_cast<XRayIonicGasMix*>(this)->_indexEmissivity = index;
-    for (int l = 0; l < _numLambda + 2; l++)
+    for (int l = 0; l < cloudy::numLambda + 2; l++)
         result.push_back(StateVariable::custom(index++, "volume emissivity", "powervolumedensity"));
 
     return result;
@@ -1019,7 +1021,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
     }
 
     // opacities and scattering interactions
-    for (int o = 0; o < _numLambda; o++)
+    for (int o = 0; o < cloudy::numLambda; o++)
     {
         double lambda = _lambda[o];
 
@@ -1054,7 +1056,7 @@ double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, co
     }
 
     // emissivities
-    for (int e = 0; e < _numLambda; e++)
+    for (int e = 0; e < cloudy::numLambda; e++)
     {
         double lambda = _lambda[e];
         double emi = cloudy.emissivity(_lambda, lambda);
@@ -1229,13 +1231,13 @@ DisjointWavelengthGrid* XRayIonicGasMix::emissionWavelengthGrid() const
 Array XRayIonicGasMix::emissionSpectrum(const MaterialState* state, const Array& /*Jv*/) const
 {
     // MAYBE BUILD THE 0 INTO THE TABLE BEFOREHAND? -> extra data and must convert anyway -> so no?
-    Array emis(_numLambda + 2);
+    Array emis(cloudy::numLambda + 2);
     emis[0] = 0.;
-    for (int l = 1; l < _numLambda + 1; l++)
+    for (int l = 1; l < cloudy::numLambda + 1; l++)
     {
         emis[l] = state->getEmissivity(l);
     }
-    emis[_numLambda + 1] = 0.;
+    emis[cloudy::numLambda + 1] = 0.;
 
     return emis * state->volume();
 }

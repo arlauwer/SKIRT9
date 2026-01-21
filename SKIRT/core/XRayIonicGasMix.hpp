@@ -162,7 +162,6 @@ private:
     int _indexEmissivity;       // index of the emissivity in the custom state variables
 
     // shared variables //
-    int _numLambda;
     Array _lambda;
 
     // int _numLambdaEmis;

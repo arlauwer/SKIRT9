@@ -16,6 +16,7 @@ namespace cloudy
         4.64158883e+01, 3.16227766e+01, 2.15443469e+01, 1.46779927e+01, 1.00000000e+01, 6.81292069e+00, 4.64158883e+00,
         3.16227766e+00, 2.15443469e+00, 1.46779927e+00, 1.00000000e+00};
     constexpr int numIons = 465;
+    constexpr int numLambda = 3141;
     constexpr double minRad = 1e-10;
     constexpr double stc = 1e3;                // W/m2 -> erg/s/cm2
     constexpr double Rtm = Constants::iRyd();  // Ryd -> m

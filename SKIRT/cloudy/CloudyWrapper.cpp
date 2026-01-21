@@ -91,8 +91,8 @@ void CloudyWrapper::setup(string basePath, const Array& lambda)
 
     _empty.temperature = 0.;
     _empty.abundances.resize(cloudy::numIons, 0.);
-    _empty.opacities.resize(cloudy::numBins, 0.);
-    _empty.emissivities.resize(cloudy::numBins, 0.);
+    _empty.opacities.resize(cloudy::numLambda, 0.);
+    _empty.emissivities.resize(cloudy::numLambda, 0.);
 
     // potentially load existing data
     load();

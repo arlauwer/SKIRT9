@@ -87,8 +87,9 @@ void Cloudy::setup()
 
 void Cloudy::run()
 {
-    string cmd = "cd " + _path + " && cloudy < sim.in > sim.out";
-    System::execute(cmd);
+    string cmd = "cd " + _path + " && /usr/local/bin/cloudy < sim.in > sim.out";
+    int status = System::execute(cmd);
+    if (status != 0) throw FATALERROR("Cloudy::run: Cloudy failed to run");
 }
 
 ////////////////////////////////////////////////////////////////////
