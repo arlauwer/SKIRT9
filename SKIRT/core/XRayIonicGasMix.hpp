@@ -77,8 +77,6 @@ public:
 
     bool hasResonantScattering() const override;
 
-    bool hasExtraSpecificState() const override;
-
     bool hasScatteringDispersion() const override;
 
     bool scatteringEmulatesSecondaryEmission() const override;

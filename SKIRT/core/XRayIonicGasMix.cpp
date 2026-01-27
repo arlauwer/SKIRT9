@@ -1254,13 +1254,6 @@ bool XRayIonicGasMix::hasResonantScattering() const
 
 ////////////////////////////////////////////////////////////////////
 
-bool XRayIonicGasMix::hasExtraSpecificState() const
-{
-    return true;
-}
-
-////////////////////////////////////////////////////////////////////
-
 bool XRayIonicGasMix::hasScatteringDispersion() const
 {
     return true;
