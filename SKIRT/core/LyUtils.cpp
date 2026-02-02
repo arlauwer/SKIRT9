@@ -29,13 +29,7 @@ double LyUtils::vtherm(double T, double mass)
 
 ////////////////////////////////////////////////////////////////////
 
-// double mass = Atoms::mass(Z);                         // mass of the ion
-// double vth = sqrt(2. * kB * T / mass);                // thermal velocity for T
-// double a = lamA / 4. / M_PI / vth;                    // Voigt parameter
-// double x = (lam - lambda) / lambda * c / vth;         // dimensionless frequency
-// double sigma0 = g * lam * lam * M_2_SQRTPI / 4. * a;  // cross section at line center
-// return sigma0 * VoigtProfile::value(a, x);            // cross section at given x
-
+// vth = sqrt(2) * thermal velocity
 double LyUtils::section(double vth, double a, double center, double g, double lambda)
 {
     double x = (center - lambda) / lambda * c / vth;            // dimensionless frequency

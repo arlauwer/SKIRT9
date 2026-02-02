@@ -18,6 +18,7 @@
 #include "StoredTable.hpp"
 #include "StringUtils.hpp"
 #include "TextInFile.hpp"
+#include <cmath>
 #include <tuple>
 
 ////////////////////////////////////////////////////////////////////
@@ -28,7 +29,7 @@ namespace
 
     // static constexpr double defaultTemperature = 1e3;
     static constexpr int numAtoms = 30;  // maximum atomic number used in this class
-    static constexpr int numLy = 18;     // maximum lyman index used in this class
+    // static constexpr int numLy = 18;     // maximum lyman index used in this class
 
     // convert photon energy in eV to and from wavelength in m (same conversion in both directions)
     constexpr double wavelengthToFromEnergy(double x)
@@ -171,7 +172,7 @@ namespace
         LymanResource(const Array& a) : Z(a[0]), index(a[1]), lamA(a[2]), lam(a[3]) {}
         int ionIndex{-1};  // index of the ion
         double sprob{-1};  // scatter probability after resonant scattering (<=1)
-        double vth{-1};    // thermal velocity (m/s)
+        double vth{-1};    // sqrt(2) * thermal velocity (m/s)
         short Z;           // atomic number
         short index;       // Lyman index (alpha1/2, alpha3/2, beta1/2, ...)
         double lamA;       // wavelength * Einstein A (m/s)
@@ -179,7 +180,8 @@ namespace
 
         double section(double lambda) const
         {
-            double a = lamA / 4. / M_PI / vth;
+            double a = lamA / (4. * M_PI * vth);
+
             double g = (index % 2) + 1.;
             return LyUtils::section(vth, a, lam, g, lambda);
         }
@@ -981,6 +983,7 @@ void XRayIonicGasMix::setupSelfBefore()
         // Calculate the total branching probability for each resonant Lyman transition.
         // This is the probability that a new photon will be emitted after a 'resonant absorption' event.
         // This value can be lower than 1 because low energy photons are ignored and thus not re-emitted.
+        // There is some code duplication since we do this later in the calculating of the persistent data.
         if (resonantScattering())
         {
             for (auto& uly : usedLyr)
@@ -1030,17 +1033,27 @@ void XRayIonicGasMix::setupSelfBefore()
                 const auto& uly = usedLyr[l];
                 auto& lyp = _lymanParams[l];
 
+                double vth = M_SQRT2 * vtherm(uly.Z);
+
                 lyp.Z = uly.Z;
                 lyp.index = uly.index;
                 lyp.lambda = uly.lam;
-                lyp.a = uly.lamA / 2. * M_SQRT2 / M_PI / vtherm(uly.Z);
+                lyp.a = uly.lamA / (4. * M_PI * vth);
+
+                int Z = lyp.Z;
+                int upper = lyp.index;
 
                 // branching probability
-                Array pLyl(0., numLy);
+                Array pLyl(0., upper + 1);  // can only decay to lower Lyman index
                 for (auto& b : lybResource)
-                    if (b.upper == lyp.index) pLyl[lyp.index] = b.prob;
+                {
+                    // for each Lyman Z, upper level, store all the lower probabilities
+                    if (Z == b.Z && upper == b.upper) pLyl[b.lower] = b.prob;
+                }
 
-                NR::cdf(lyp.cumbranching, pLyl);
+                // obtain the cumulative
+                double test = NR::cdf(lyp.cumbranching, pLyl);  // TEMP TEST
+                if (uly.sprob != test) throw FATALERROR("Inconsistent cumulative branching probability");
             }
         }
     }
@@ -1179,6 +1192,7 @@ void XRayIonicGasMix::setupSelfBefore()
             sections[2 * _numIons + f] = section;
         }
 
+        // resonant scattering
         for (int l = 0; l < _numLym; l++)
         {
             const auto& uly = usedLyr[l];
@@ -1242,7 +1256,7 @@ MaterialMix::MaterialType XRayIonicGasMix::materialType() const
 
 bool XRayIonicGasMix::hasPolarizedScattering() const
 {
-    return scatterBoundElectrons() == BoundElectrons::FreeWithPolarization;
+    return scatterBoundElectrons() == BoundElectrons::FreeWithPolarization || resonantScattering();
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1356,14 +1370,19 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
         // Fluorescenct emission (scattering)
         else if (scatinfo->species < 2 * _numIons + _numFluo)
         {
-            int k = scatinfo->species - 2 * _numIons;
-            auto flp = _fluorescenceParams[k];
+            int f = scatinfo->species - 2 * _numIons;
+            auto flp = _fluorescenceParams[f];
             double lambda = flp.lambda;
             double width = flp.width;
 
             scatinfo->velocity = vtherm(flp.Z) * random()->maxwell();
 
-            if (width > 0.)
+            if (width == 0.)
+            {
+                // for a zero-width line, simply copy the central wavelength
+                scatinfo->lambda = lambda;
+            }
+            else
             {
                 // otherwise sample a wavelength from the Lorentz line shape in energy space;
                 // the tails of the Lorentz distribition are very long, occasionaly resulting in negative energies;
@@ -1375,55 +1394,49 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
                     if (nonZeroRange.contains(scatinfo->lambda)) break;
                 }
             }
-            else
-            {
-                // for a zero-width line, simply copy the central wavelength
-                scatinfo->lambda = lambda;
-            }
         }
         // Resonant Lyman scattering
         else
         {
             int l = scatinfo->species - 2 * _numIons - _numFluo;
-            const auto& lyp = _lymanParams[l];
-            int upper = lyp.index;
-            double center = lyp.lambda;
-            double a = lyp.a;
-            double vth = M_SQRT2 * vtherm(lyp.Z);
-            bool J32 = upper % 2 == 1;  // true if Ju=3/2 -> happens at odd Lyman index
+            const auto& ulyp = _lymanParams[l];  // upper Lyman
 
-            // probability of decaying from Lyu to Lyl
-            const Array& PLyl = lyp.cumbranching;
-
-            short lower = NR::locateFail(PLyl, random()->uniform());
+            int upper = ulyp.index;
+            int lower = NR::locateFail(ulyp.cumbranching, random()->uniform());
 
             if (lower == -1) throw FATALERROR("Sampling from Lyman branching probability has failed");
 
-            // if incoherent (i.e. branching occurs)
-            if (lower != upper)
+            double center;
+            double a;
+            double vth;
+            bool J32;  // true if Ju=3/2 -> happens at odd Lyman index
+
+            // if coherent (no branching)
+            if (lower == upper)
+            {
+                vth = M_SQRT2 * vtherm(ulyp.Z);
+                a = ulyp.a;
+                center = ulyp.lambda;
+                J32 = upper % 2 == 1;
+
+                scatinfo->lambda = 0.;  // explicitly don't use
+            }
+            // if incoherent (branching)
+            else
             {
                 int index = l - (upper - lower);  // index of the lower branching
                 if (index < 0 || index >= _numLym) throw FATALERROR("upper/lower index out of range");
 
-                const auto& llyp = _lymanParams[index];
+                const auto& llyp = _lymanParams[index];  // lower Lyman
 
                 // set parameters to those of the lower branching
-                center = llyp.lambda;
-                a = llyp.a;
                 vth = M_SQRT2 * vtherm(llyp.Z);
+                a = llyp.a;
+                center = llyp.lambda;
                 J32 = lower % 2 == 1;
 
-                lambda = llyp.lambda;
                 scatinfo->lambda = llyp.lambda;
             }
-            else
-            {
-                scatinfo->lambda = 0.;  // explicitly ensure we don't use it
-            }
-
-            // I will sample from a Voigt profile even for incoherent scattering! Make sure this is inteded behaviour!
-            // The wavelength will be set to the central wavelength but there is still a Voigt profile used for both the
-            // receiving and emitting wavelength shifts!
 
             // sample a atom velocity from Voigt profile
             std::tie(scatinfo->velocity, scatinfo->dipole) =
@@ -1447,6 +1460,7 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     {
         int i = scatinfo->species;
         const auto& ion = _ionParams[i];
+        // transform the wavelength into the rest frame of the electron
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
         _ray->peeloffScattering(I, lambda, ion.Z, pp->direction(), bfkobs);
         lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
@@ -1458,6 +1472,7 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     {
         int i = scatinfo->species - _numIons;
         const auto& ion = _ionParams[i];
+        // transform the wavelength into the rest frame of the electron
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
         _com->peeloffScattering(I, Q, U, V, lambda, ion.Z, pp->direction(), bfkobs, bfky, pp);
         lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
@@ -1479,6 +1494,9 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     // resonant scattering
     else
     {
+        // STILL UNCLEAR WHAT TO DO HERE
+        // RECEIVE -> EMISSION OR JUST SHIFT AT THE END?
+
         // technically only needed when coherent (can also be done with LyUtils::)
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
 
@@ -1492,6 +1510,7 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
         if (scatinfo->lambda != 0.) lambda = scatinfo->lambda;
 
         lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
+        // LyUtils::shiftWavelength(lambda, scatinfo->velocity, pp->direction(), bfkobs); // shift at the end only?
         return false;
     }
 }
