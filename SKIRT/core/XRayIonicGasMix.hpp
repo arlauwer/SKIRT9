@@ -107,7 +107,7 @@ public:
 
     Array sigmaSca(double lambda, const MaterialState* state) const;
 
-    void setScatteringInfoIfNeeded(PhotonPacket* pp, const MaterialState* state, double lambda) const;
+    void setScatteringInfoIfNeeded(PhotonPacket* pp, const MaterialState* state, const double lambda) const;
 
     bool peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;

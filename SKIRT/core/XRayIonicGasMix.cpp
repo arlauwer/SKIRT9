@@ -875,7 +875,7 @@ void XRayIonicGasMix::setupSelfBefore()
     if (resonantScattering())
     {
         _dpf = new DipolePhaseFunction();
-        _dpf->initialize(random(), hasPolarizedScattering());
+        _dpf->initialize(random(), true);
     }
 
     // resources that are maintained during the setup
@@ -1349,7 +1349,7 @@ double XRayIonicGasMix::opacityExt(double lambda, const MaterialState* state, co
 
 ////////////////////////////////////////////////////////////////////
 
-void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const MaterialState* state, double lambda) const
+void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const MaterialState* state, const double lambda) const
 {
     auto scatinfo = pp->getScatteringInfo();
 
@@ -1494,23 +1494,19 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     // resonant scattering
     else
     {
-        // STILL UNCLEAR WHAT TO DO HERE
-        // RECEIVE -> EMISSION OR JUST SHIFT AT THE END?
-
-        // technically only needed when coherent (can also be done with LyUtils::)
-        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
-
         if (scatinfo->dipole)
             _dpf->peeloffScattering(I, Q, U, V, pp->direction(), bfkobs, bfky, pp);
         else
             // isotropic scattering removes polarization, so the contribution is trivially 1
             I = 1.;
 
-        // if incoherent (i.e. branching occurs)
-        if (scatinfo->lambda != 0.) lambda = scatinfo->lambda;
+        // if coherent (no branching)
+        if (scatinfo->lambda == 0.)
+            lambda = LyUtils::shiftWavelength(lambda, scatinfo->velocity, pp->direction(), bfkobs);
+        // if incoherent (branching)
+        else
+            lambda = PhotonPacket::shiftedEmissionWavelength(scatinfo->lambda, bfkobs, scatinfo->velocity);
 
-        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
-        // LyUtils::shiftWavelength(lambda, scatinfo->velocity, pp->direction(), bfkobs); // shift at the end only?
         return false;
     }
 }
@@ -1565,21 +1561,22 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
     // resonant scattering
     else
     {
-        // technically only needed when coherent (can also be done with LyUtils::)
-        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
-
         if (scatinfo->dipole)
+        {
             bfknew = _dpf->performScattering(pp->direction(), pp);
+        }
         else
         {
             bfknew = random()->direction();
             pp->setUnpolarized();
         }
 
-        // if incoherent (i.e. branching occurs)
-        if (scatinfo->lambda != 0.) lambda = scatinfo->lambda;
-
-        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
+        // if coherent (no branching)
+        if (scatinfo->lambda == 0.)
+            lambda = LyUtils::shiftWavelength(lambda, scatinfo->velocity, pp->direction(), bfknew);
+        // if incoherent (branching)
+        else
+            lambda = PhotonPacket::shiftedEmissionWavelength(scatinfo->lambda, bfknew, scatinfo->velocity);
     }
 
     // execute the scattering event in the photon packet
