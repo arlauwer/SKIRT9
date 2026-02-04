@@ -24,8 +24,6 @@ namespace
 {
     // ---- common helper functions ---- //
 
-    constexpr double defaultMetallicity = 0.;
-
     constexpr int numAtoms = 30;  // H to Zn
     // masses of the elements in amu
     constexpr std::array<double, numAtoms> atomicMasses = {
@@ -952,7 +950,7 @@ void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, do
     double n = state->numberDensity();
 
     // initialize metallicity
-    Z = Z >= 0. ? Z : defaultMetallicity;
+    Z = Z >= 0. ? Z : defaultMetallicity();
     state->setMetallicity(Z);
 
     Array J(cloudy::numBins);
@@ -995,6 +993,22 @@ bool XRayIonicGasMix::isSpecificStateConverged(int numCells, int numUpdated, int
 
 double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, const Array& J)
 {
+    // preferably we don't keep this information for empty cells
+    if (n == 0.)
+    {
+        state->setTemperature(0.);
+        for (int i = 0; i < numAtoms; i++) state->setVTherm(i, 0.);
+        for (int i = 0; i < numIons; i++) state->setAbundance(i, 0.);
+        for (int o = 0; o < cloudy::numLambda; o++)
+        {
+            state->setKappaAbs(o, 0.);
+            state->setKappaSca(o, 0.);
+            for (int i = 0; i < numInter + 1; i++) state->setKappaScaCum(o, i, 0.);
+        }
+        for (int e = 0; e < cloudy::numLambda; e++) state->setEmissivity(e, 0.);
+        return 0.;
+    }
+
     Array radWidth = config()->radiationFieldWLG()->dlambdav();
     double ins = (4. * M_PI * J * radWidth).sum();  // W/m2/m/sr -> W/m2 (integrated mean intensity)
     CloudyData cloudy = _cloudyWrapper.query(n, Z, J, ins);

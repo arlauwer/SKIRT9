@@ -33,6 +33,9 @@ class XRayIonicGasMix : public EmittingGasMix
         PROPERTY_STRING(libLocation, "Cloudy library location")
         ATTRIBUTE_DISPLAYED_IF(libLocation, "Level3")
 
+        PROPERTY_DOUBLE(defaultMetallicity, "default (solar) metallicity")
+        ATTRIBUTE_DEFAULT_VALUE(defaultMetallicity, "1.")
+
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
         ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level2")
