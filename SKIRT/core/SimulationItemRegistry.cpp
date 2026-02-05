@@ -9,6 +9,7 @@
 
 // ---> add new items below in alphabetical order
 
+#include "AbsorptionOnlyMaterialMixDecorator.hpp"
 #include "AdaptiveMeshGeometry.hpp"
 #include "AdaptiveMeshMedium.hpp"
 #include "AdaptiveMeshSource.hpp"
@@ -109,6 +110,7 @@
 #include "HirashitaLogNormalGrainSizeDistribution.hpp"
 #include "HofmeisterPericlaseGrainComposition.hpp"
 #include "HollowRadialVectorField.hpp"
+#include "HubbleRadialVectorField.hpp"
 #include "HyperboloidGeometry.hpp"
 #include "HyperboloidShellGeometry.hpp"
 #include "ImportedMediumDensityProbe.hpp"
@@ -493,6 +495,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<VectorField>();
     ItemRegistry::add<RadialVectorField>();
     ItemRegistry::add<HollowRadialVectorField>();
+    ItemRegistry::add<HubbleRadialVectorField>();
     ItemRegistry::add<CylindricalVectorField>();
     ItemRegistry::add<UnidirectionalVectorField>();
     ItemRegistry::add<OffsetVectorFieldDecorator>();
@@ -600,6 +603,8 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<NonLTELineGasMix>();
     ItemRegistry::add<LyaNeutralHydrogenGasMix>();
     ItemRegistry::add<TrivialGasMix>();
+
+    ItemRegistry::add<AbsorptionOnlyMaterialMixDecorator>();
 
     // material mix families
     ItemRegistry::add<MaterialMixFamily>();

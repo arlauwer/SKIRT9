@@ -777,7 +777,7 @@ void MediumSystem::peelOffScattering(int h, double w, double lambda, Direction b
     double I = 0., Q = 0., U = 0., V = 0.;
     MaterialState mst(_state, m, h);
     pp->setScatteringComponent(h);
-    mix(m, h)->peeloffScattering(I, Q, U, V, lambda, bfkobs, bfky, &mst, pp);
+    bool emulatedSecondaryEmission = mix(m, h)->peeloffScattering(I, Q, U, V, lambda, bfkobs, bfky, &mst, pp);
 
     // pass the result to the peel-off photon packet
     ppp->launchScatteringPeelOff(pp, bfkobs, _state.bulkVelocity(m), lambda, I * w);
@@ -787,6 +787,7 @@ void MediumSystem::peelOffScattering(int h, double w, double lambda, Direction b
         // so the reference direction is no longer used and can be left unspecified
         ppp->setPolarized(I, Q, U, V);
     }
+    if (emulatedSecondaryEmission) ppp->setEmulatedSecondaryOrigin(h);
 }
 
 ////////////////////////////////////////////////////////////////////
