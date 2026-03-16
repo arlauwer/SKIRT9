@@ -1167,7 +1167,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
 
 ////////////////////////////////////////////////////////////////////
 
-void XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs,
+bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs,
                                         Direction bfky, const MaterialState* state, const PhotonPacket* pp) const
 {
     // draw a random scattering channel and atom velocity, unless a previous peel-off stored this already
@@ -1194,6 +1194,8 @@ void XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
 
     // if we have dispersion, Doppler-shift the outgoing wavelength from the electron rest frame
     if (state->temperature() > 0.) lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
+
+    return false;
 }
 
 ////////////////////////////////////////////////////////////////////
