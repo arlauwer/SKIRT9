@@ -1433,7 +1433,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
                 vth = M_SQRT2 * vtherm(llyp.Z);
                 a = llyp.a;
                 center = llyp.lambda;
-                J32 = lower % 2 == 1;
+                J32 = false;  // branching is isotropic
 
                 scatinfo->lambda = llyp.lambda;
             }
