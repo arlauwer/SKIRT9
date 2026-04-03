@@ -17,14 +17,9 @@ file(GLOB HEADERS "*.hpp")
 # create the library target
 add_library(${TARGET} STATIC ${SOURCES} ${HEADERS})
 
-# add SMILE library dependencies
+# add required dependencies
 target_link_libraries(${TARGET} fundamentals hnsw utils)
 include_directories(../../SMILE/fundamentals ../hnsw ../utils)
-
-# add SKIRT library dependencies
-# target_link_libraries(${TARGET} fitsio voro mpi utils tetgen)
-# include_directories(../fitsio ../voro ../mpi ../utils)
-# include_directories(SYSTEM ../tetgen)  # suppress warnings in tetgen header
 
 # adjust C++ compiler flags to our needs
 include("../../SMILE/build/CompilerFlags.cmake")

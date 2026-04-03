@@ -30,11 +30,7 @@ class XRayIonicGasMix : public EmittingGasMix
     ITEM_CONCRETE(XRayIonicGasMix, EmittingGasMix, "Ionised gas mix")
         ATTRIBUTE_TYPE_INSERT(XRayIonicGasMix, "GasMix,CustomMediumState")
 
-        PROPERTY_STRING(libLocation, "Cloudy library location")
-        ATTRIBUTE_DISPLAYED_IF(libLocation, "Level3")
-
-        PROPERTY_DOUBLE(defaultMetallicity, "default (solar) metallicity")
-        ATTRIBUTE_DEFAULT_VALUE(defaultMetallicity, "1.")
+        // Cloudy properties go here
 
         PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
@@ -47,11 +43,6 @@ public:
     void setupSelfBefore() override;
 
     ~XRayIonicGasMix();
-
-    //======== Private support functions =======
-
-private:
-    int indexForOpacity(double lambda) const;
 
     //============= Capabilities =============
 
@@ -84,9 +75,6 @@ public:
 
     bool isSpecificStateConverged(int numCells, int numUpdated, int numNotConverged, MaterialState* currentAggregate,
                                   MaterialState* previousAggregate) const override;
-
-private:
-    double updateState(MaterialState* state, double n, double Z, const Array& J);
 
     //============= Low-level material properties =============
 
@@ -148,37 +136,19 @@ public:
 private:
     Log* _log{nullptr};
 
-    Range _range;
-
-    // MaterialState indices: size //
-    // Abundances:      numIons
-    // VTherm:          numAtoms
-    // SigmaAbs:        numLambda
-    // SigmaSca:        numLambda
-    // SigmaScaCum:     numLambda x 2*numIons+1 (+1 for cumulative)
-    // Emissivity:      numLambda + 2 (+2 for 'outside' bins)
-    int _indexAbundances;       // index of the abundances in the custom state variables
-    int _indexThermalVelocity;  // index of the thermal velocity in the custom state variables
-    int _indexKappaAbs;         // index of the absorption cross section in the custom state variables
-    int _indexKappaSca;         // index of the absorption and scattering cross sections in the custom state variables
-    int _indexKappaScaCum;      // index of the cumulative scattering cross section for Rayleigh and Compton scattering
-    int _indexEmissivity;       // index of the emissivity in the custom state variables
-
-    // shared variables //
-    Array _lambda;
-
-    // int _numLambdaEmis;
-    // Array _lambdaEmis;
-    DisjointWavelengthGrid* _emissionGrid{nullptr};  // grid for emission
-
     // bound-electron scattering helpers depending on the configured implementation
     ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
 
-    // INFO: the density (1/m3) is the hden in Cloudy!
-    // Meaning that if you set the density in SKIRT (mix.txt) to 1e4, it will be the hden in Cloudy!
-    // the sum of the H abundances: H, H+ (H+ not present in SKIRT yet?), (molecules currently turned off) will be 1e4
+    // cloudy
+    int _indexAbundances;       // numIons
+    int _indexThermalVelocity;  // numAtoms
+    int _indexKappaAbs;         // numLambda
+    int _indexKappaSca;         // numLambda
+    int _indexKappaScaCum;      // numLambda x 2*numIons+1 (+1 for cumulative)
+    int _indexEmissivity;       // numLambda + 2 (+2 for 'outside' bins)
 
+    CloudyConfig _cloudyConfig;
     CloudyWrapper _cloudyWrapper;
 };
 

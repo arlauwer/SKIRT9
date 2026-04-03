@@ -2,63 +2,48 @@
 #define CLOUDY_WRAPPER_HPP
 
 #include "Cloudy.hpp"
-#include <atomic>
+#include "NNIndex.hpp"
+#include <deque>
+#include <future>
 #include <mutex>
 #include <unordered_map>
-
-namespace hnswlib
-{
-    class CloudySpace;  // distance space for Cloudy
-    template<typename T> class HierarchicalNSW;
-}
 
 class CloudyWrapper
 {
 public:
     ~CloudyWrapper();
 
-    void setup(string basePath, const Array& lambda);
-
-    CloudyData query(double hden, double metallicity, const Array& radField, double ins);
+    void setup(const CloudyConfig& config, const string& nnIndexPath);
 
     void save();
 
     void load();
 
-private:
-    // we need to make this thread safe somehow.
-    // For a single materialmix this is easily done by making the uid atomic.
-    // But for multiple mixes, not sure? Make it static?
-    static std::atomic<int> _next_uid;
-    static std::atomic<int> _next_label;
+    Cloudy::Output query(const Cloudy::Input& input);
 
+private:
+    void loadTemplate();
+
+    // paths
     string _basePath;
     string _runsPath;
-    string _hnswPath;
-
-    string _template;
-
-    // hnsw
-    int _dim{2 + cloudy::numBins};
-    size_t _max_elements{100000};  // set this properly!
-    int _M{16};
-    int _ef_const{100};
-    size_t _k{4};
-
-    hnswlib::CloudySpace* _space{nullptr};
-    hnswlib::HierarchicalNSW<double>* _hnsw{nullptr};
-
-    double _max_dist{0.5};
+    string _nnIndexPath;
 
     // cloudy
-    Array _lambda;
-    std::unordered_map<size_t, CloudyData> _cloudys;
-    std::unordered_map<size_t, std::atomic<bool>> _dones;
+    string _template;
+    CloudyConfig _cloudyConfig;
 
-    std::mutex _mutex;
+    // cloudy data
+    std::deque<Cloudy::Output> _outputs;
+    Cloudy::Output _empty;
 
-    // the cloudy data for an empty cell
-    CloudyData _empty;
+    // hnsw index
+    NNIndex _nnIndex;
+
+    // thread safe
+    std::mutex _mutex;                                                // lock for query
+    size_t _current_label{0};                                         // technically no atomic needed
+    std::unordered_map<size_t, std::shared_future<size_t>> _pending;  // hnsw label -> future index into _outputs
 };
 
 #endif

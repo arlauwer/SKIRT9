@@ -4,56 +4,30 @@
 ///////////////////////////////////////////////////////////////// */
 
 #include "XRayIonicGasMix.hpp"
+#include "Atoms.hpp"
+#include "Cloudy.hpp"
+#include "CloudyWrapper.hpp"
 #include "ComptonPhaseFunction.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
 #include "DipolePhaseFunction.hpp"
-#include "FatalError.hpp"
-#include "ListWavelengthGrid.hpp"
+#include "DisjointWavelengthGrid.hpp"
+#include "FilePaths.hpp"
 #include "MaterialState.hpp"
 #include "NR.hpp"
 #include "Random.hpp"
 #include "Range.hpp"
-#include "System.hpp"
-#include <map>
-#include <regex>
+#include "UpdateStatus.hpp"
+#include <array>
 
 ////////////////////////////////////////////////////////////////////
 
 namespace
 {
-    // ---- common helper functions ---- //
-
-    constexpr int numAtoms = 30;  // H to Zn
-    // masses of the elements in amu
-    constexpr std::array<double, numAtoms> atomicMasses = {
-        1.0079,  4.0026, 6.941,   9.01218, 10.81,   12.011, 14.0067, 15.9994, 18.9984, 20.179,
-        22.9898, 24.305, 26.9815, 28.0855, 30.9738, 32.06,  35.453,  39.948,  39.0983, 40.08,
-        44.9559, 47.9,   50.9415, 51.996,  54.938,  55.847, 58.9332, 58.7,    63.546,  65.38};
-
-    struct Ion
-    {
-        short Z;  // atomic number
-        short N;  // number of electrons
-    };
-
-    constexpr int numIons = 465;
-    const std::array<Ion, numIons> initIons()
-    {
-        std::array<Ion, numIons> ions{};
-        for (short Z = 1; Z <= numAtoms; ++Z)
-        {
-            for (short N = 1; N <= Z; ++N)
-            {
-                int i = Z * (Z - 1) / 2 + (N - 1);
-                ions[i].Z = Z;
-                ions[i].N = N;
-            }
-        }
-        return ions;
-    }
-    const auto ions = initIons();
-    constexpr int numInter = 2 * numIons;  // Compton and Rayleigh scattering
+    constexpr int numAtoms = CloudyConfig::numAtoms;
+    constexpr int numIons = CloudyConfig::numIons;
+    constexpr int numInter = 2 * CloudyConfig::numIons;  // Compton and Rayleigh scattering
+    const auto ions = Atoms::initIons<numIons, numAtoms>();
 
     constexpr double vtherm(double T, double amu)
     {
@@ -782,35 +756,14 @@ void XRayIonicGasMix::setupSelfBefore()
             break;
     }
 
-    string lib = libLocation();
-    if (!System::isDir(lib)) throw FATALERROR("The Cloudy library location is not a directory: " + lib);
+    auto config = find<Configuration>();
+    auto radGrid = config->radiationFieldWLG();
 
-    Array rad = config()->radiationFieldWLG()->lambdav();
-    if (rad.size() != cloudy::numBins)
-        throw FATALERROR("The radiation field wavelength grid must have the same number of bins as the table");
+    _cloudyConfig.numBins = radGrid->numBins();
+    _cloudyConfig.radEdges = radGrid->dlambdav();
 
-    TextInFile wav(this, "cloudy_wav.txt", "Cloudy wavelengths", true);
-    wav.addColumn("lambda", "wavelength", "Ryd");
-    _lambda = wav.readAllColumns()[0];
-
-    if (_lambda.size() != cloudy::numLambda)
-        throw FATALERROR(
-            "The tabulated opacity wavelength grid must have the same number of wavelengths as the cloudy outputs");
-    if (_lambda[0] > _lambda[cloudy::numLambda - 1])
-        throw FATALERROR("The tabulated opacity wavelength grid must be ascending");
-
-    auto range = Range(_lambda[0], _lambda[cloudy::numLambda - 1]);
-    if (!range.contains(config()->sourceWavelengthRange()))
-    {
-        throw FATALERROR(
-            "The source wavelength range must be contained in the tabulated opacity wavelength grid (1 to 1e4 Ryd)");
-    }
-
-    // ---- continuum emissivity ---- //
-    vector<double> lambdaCv(std::begin(_lambda), std::end(_lambda));
-    if (!_emissionGrid) _emissionGrid = new ListWavelengthGrid(this, lambdaCv, 0., true, true);
-
-    _cloudyWrapper.setup(lib, _lambda);
+    string nnIndexPath = FilePaths::resource("cloudy.hnsw");
+    _cloudyWrapper.setup(_cloudyConfig, nnIndexPath);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -819,14 +772,6 @@ XRayIonicGasMix::~XRayIonicGasMix()
 {
     delete _ray;
     delete _com;
-    delete _emissionGrid;
-}
-
-////////////////////////////////////////////////////////////////////
-
-int XRayIonicGasMix::indexForOpacity(double lambda) const
-{
-    return NR::locateClip(_lambda, lambda);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -875,56 +820,7 @@ bool XRayIonicGasMix::hasContinuumEmission() const
 
 bool XRayIonicGasMix::hasLineEmission() const
 {
-    return false;
-}
-
-////////////////////////////////////////////////////////////////////
-
-vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
-{
-    vector<StateVariable> result{StateVariable::numberDensity(), StateVariable::temperature(),
-                                 StateVariable::metallicity()};
-
-    // To save memory here, we could have some system that allows to only allocate memory for non-empty cells.
-    // I.e. have these state variables for only cells with non-zero number density.
-
-    // next available custom variable index
-    int index = 0;
-
-    // State variables
-    // abundances:      numIons
-    // vtherm:          numAtoms
-    // kappaabsC:       cloudy::numLambda
-    // kappascaC:       cloudy::numLambda
-    // cumprobscaC:     cloudy::numLambda * (numInter+1) // this is huge and can probably be reduced since probability is proportional to abundance (i.e. can be sampled during run instead of during setup)
-    // emissivityC:     cloudy::numLambda + 2
-    // LINES WIP
-
-    const_cast<XRayIonicGasMix*>(this)->_indexAbundances = index;
-    for (int i = 0; i < numIons; i++)
-        result.push_back(StateVariable::custom(index++, "abundance", "numbervolumedensity"));
-
-    const_cast<XRayIonicGasMix*>(this)->_indexThermalVelocity = index;
-    for (int a = 0; a < numAtoms; a++) result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
-
-    const_cast<XRayIonicGasMix*>(this)->_indexKappaAbs = index;
-    for (int l = 0; l < cloudy::numLambda; l++)
-        result.push_back(StateVariable::custom(index++, "absorption opacity", "opacity"));
-
-    const_cast<XRayIonicGasMix*>(this)->_indexKappaSca = index;
-    for (int l = 0; l < cloudy::numLambda; l++)
-        result.push_back(StateVariable::custom(index++, "scattering opacity", "opacity"));
-
-    const_cast<XRayIonicGasMix*>(this)->_indexKappaScaCum = index;
-    for (int l = 0; l < cloudy::numLambda; l++)
-        for (int i = 0; i < numInter + 1; ++i)
-            result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
-
-    const_cast<XRayIonicGasMix*>(this)->_indexEmissivity = index;
-    for (int l = 0; l < cloudy::numLambda + 2; l++)
-        result.push_back(StateVariable::custom(index++, "volume emissivity", "powervolumedensity"));
-
-    return result;
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -944,39 +840,135 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 
 ////////////////////////////////////////////////////////////////////
 
-void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double Z, double /*temperature*/,
-                                              const Array& /*params*/) const
+vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
+{
+    vector<StateVariable> result{StateVariable::numberDensity(), StateVariable::temperature(),
+                                 StateVariable::metallicity()};
+
+    // To save memory here, we could have some system that allows to only allocate memory for non-empty cells.
+    // I.e. have these state variables for only cells with non-zero number density.
+
+    // next available custom variable index
+    int index = 0;
+
+    const_cast<XRayIonicGasMix*>(this)->_indexAbundances = index;
+    for (int i = 0; i < numIons; i++)
+        result.push_back(StateVariable::custom(index++, "abundance", "numbervolumedensity"));
+
+    const_cast<XRayIonicGasMix*>(this)->_indexThermalVelocity = index;
+    for (int a = 0; a < numAtoms; a++) result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
+
+    const_cast<XRayIonicGasMix*>(this)->_indexKappaAbs = index;
+    for (int l = 0; l < _cloudyConfig.numLambda; l++)
+        result.push_back(StateVariable::custom(index++, "absorption opacity", "opacity"));
+
+    const_cast<XRayIonicGasMix*>(this)->_indexKappaSca = index;
+    for (int l = 0; l < _cloudyConfig.numLambda; l++)
+        result.push_back(StateVariable::custom(index++, "scattering opacity", "opacity"));
+
+    const_cast<XRayIonicGasMix*>(this)->_indexKappaScaCum = index;
+    for (int l = 0; l < _cloudyConfig.numLambda; l++)
+        for (int i = 0; i < numInter + 1; ++i)
+            result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
+
+    const_cast<XRayIonicGasMix*>(this)->_indexEmissivity = index;
+    for (int l = 0; l < _cloudyConfig.numLambda + 2; l++)
+        result.push_back(StateVariable::custom(index++, "volume emissivity", "powervolumedensity"));
+
+    return result;
+}
+
+////////////////////////////////////////////////////////////////////
+
+void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metallicity, double temperature,
+                                              const Array& params) const
 {
     double n = state->numberDensity();
 
+    // defaults should be taken from CloudyConfig
+
     // initialize metallicity
-    Z = Z >= 0. ? Z : defaultMetallicity();
-    state->setMetallicity(Z);
+    state->setMetallicity(metallicity >= 0. ? metallicity : 0.);
 
-    Array J(cloudy::numBins);
-    J = 1e10;  // temporary really high for now
-
-    const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
+    // set to default value here
 }
 
 ////////////////////////////////////////////////////////////////////
 
 UpdateStatus XRayIonicGasMix::updateSpecificState(MaterialState* state, const Array& J) const
 {
-    UpdateStatus status;
-
     // Array radWidth = config()->radiationFieldWLG()->dlambdav();
+    // double ins = (4. * M_PI * J * radWidth).sum();  // W/m2/m/sr -> W/m2 (integrated mean intensity)
 
-    // Lookup table values
-    double n = state->numberDensity();  // 1/m3
-    double Z = state->metallicity();
+    Cloudy::Input input;
 
-    double conv = const_cast<XRayIonicGasMix*>(this)->updateState(state, n, Z, J);
+    input.hden = state->numberDensity();
+    input.metal = state->metallicity();
+    input.radv = J;
 
-    if (conv < 1e-3)
-        status.updateConverged();
-    else
-        status.updateNotConverged();
+    auto* cloudyWrapper = const_cast<CloudyWrapper*>(&_cloudyWrapper);
+
+    Cloudy::Output output = cloudyWrapper->query(input);
+
+    // temperature
+    double temp = output.temp;
+    state->setTemperature(temp);
+
+    // thermal velocity
+    for (int i = 0; i < numAtoms; i++)
+    {
+        short Z = i + 1;
+        double v = vtherm(temp, Atoms::mass(Z));
+        state->setVTherm(i, v);
+    }
+
+    // abundances
+    Array prevAbun(numIons);
+    for (int i = 0; i < numIons; i++)
+    {
+        prevAbun[i] = state->getAbundance(i);
+        state->setAbundance(i, output.abunv[i]);
+    }
+
+    // optical properties
+    for (int ell = 0; ell < _cloudyConfig.numLambda; ell++)
+    {
+        double lambda = _cloudyConfig.lambdav[ell];
+        double abs = output.opacv[ell];
+        double emi = output.emisv[ell];
+
+        state->setEmissivity(ell, emi);
+        state->setKappaAbs(ell, abs);
+
+        // --- Recalculate scattering with new abundances ---
+        // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
+        Array kappaScaFractions(numInter);
+        Array kappaScaCum;
+
+        // bound electron scattering
+        for (int i = 0; i < numIons; i++)
+        {
+            double abun = output.abunv[i];
+            const auto& ion = ions[i];
+
+            // FIX THIS PROBABLY LIKE CLOUDY WHERE FREE ELECTRON FRACTION IS USED?
+
+            kappaScaFractions[i] = _ray->sectionSca(lambda, ion.Z) * abun;
+            kappaScaFractions[numIons + i] = _com->sectionSca(lambda, ion.Z) * abun;
+        }
+
+        // determine the normalized cumulative probability distribution and the cross section
+        double kappaSca = NR::cdf(kappaScaCum, kappaScaFractions);
+
+        state->setKappaSca(ell, kappaSca);
+        for (int i = 0; i < numInter + 1; i++)
+        {
+            state->setKappaScaCum(ell, i, kappaScaCum[i]);
+        }
+    }
+
+    UpdateStatus status;
+    status.updateConverged();
     return status;
 }
 
@@ -987,107 +979,6 @@ bool XRayIonicGasMix::isSpecificStateConverged(int numCells, int numUpdated, int
                                                MaterialState* /*previousAggregate*/) const
 {
     return numCells == numUpdated && numNotConverged == 0;
-}
-
-////////////////////////////////////////////////////////////////////
-
-double XRayIonicGasMix::updateState(MaterialState* state, double n, double Z, const Array& J)
-{
-    // preferably we don't keep this information for empty cells
-    if (n == 0.)
-    {
-        state->setTemperature(0.);
-        for (int i = 0; i < numAtoms; i++) state->setVTherm(i, 0.);
-        for (int i = 0; i < numIons; i++) state->setAbundance(i, 0.);
-        for (int o = 0; o < cloudy::numLambda; o++)
-        {
-            state->setKappaAbs(o, 0.);
-            state->setKappaSca(o, 0.);
-            for (int i = 0; i < numInter + 1; i++) state->setKappaScaCum(o, i, 0.);
-        }
-        for (int e = 0; e < cloudy::numLambda; e++) state->setEmissivity(e, 0.);
-        return 0.;
-    }
-
-    Array radWidth = config()->radiationFieldWLG()->dlambdav();
-    double ins = (4. * M_PI * J * radWidth).sum();  // W/m2/m/sr -> W/m2 (integrated mean intensity)
-    CloudyData cloudy = _cloudyWrapper.query(n, Z, J, ins);
-
-    // temperature
-    double temp = cloudy.temperature;
-    state->setTemperature(temp);
-
-    // thermal velocity
-    for (int i = 0; i < numAtoms; i++)
-    {
-        double v = vtherm(temp, atomicMasses[i]);
-        state->setVTherm(i, v);
-    }
-
-    // abundances
-    Array prevAbund(numIons);
-    for (int i = 0; i < numIons; i++)
-    {
-        prevAbund[i] = state->getAbundance(i);
-        const auto& ion = ions[i];
-        double abund = cloudy.abundance(ion.Z, ion.N);
-        state->setAbundance(i, abund);
-    }
-
-    // opacities and scattering interactions
-    for (int o = 0; o < cloudy::numLambda; o++)
-    {
-        double lambda = _lambda[o];
-
-        double abs = cloudy.opacity(_lambda, lambda);
-
-        state->setKappaAbs(o, abs);
-
-        // Scattering
-        // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-        Array kappaScaFractions(numInter);
-        Array kappaScaCum;
-
-        // bound electron scattering
-        for (int i = 0; i < numIons; i++)
-        {
-            double abund = state->getAbundance(i);
-
-            int Z = ions[i].Z;  // TEMP THIS NEEDS TO BE FIXED LIKE IN CLOUDY WHERE FREE ELECTRON FRACTION IS USED
-
-            kappaScaFractions[i] = _ray->sectionSca(lambda, Z) * abund;
-            kappaScaFractions[numIons + i] = _com->sectionSca(lambda, Z) * abund;
-        }
-
-        // determine the normalized cumulative probability distribution and the cross section
-        double kappaSca = NR::cdf(kappaScaCum, kappaScaFractions);
-
-        state->setKappaSca(o, kappaSca);
-        for (int i = 0; i < numInter + 1; i++)
-        {
-            state->setKappaScaCum(o, i, kappaScaCum[i]);
-        }
-    }
-
-    // emissivities
-    for (int e = 0; e < cloudy::numLambda; e++)
-    {
-        double lambda = _lambda[e];
-        double emi = cloudy.emissivity(_lambda, lambda);
-        state->setEmissivity(e, emi);
-    }
-
-    // convergence
-    double conv = 0.;
-    for (int i = 0; i < numIons; i++)
-    {
-        double prev = prevAbund[i];
-        double abund = state->getAbundance(i);
-
-        double diff = (prev - abund) / n;
-        conv += diff * diff;
-    }
-    return conv;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1122,24 +1013,33 @@ double XRayIonicGasMix::sectionExt(double /*lambda*/) const
 
 double XRayIonicGasMix::opacityAbs(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
-    int l = indexForOpacity(lambda);
-    return state->getKappaAbs(l);
+    int ell = NR::locateFail(_cloudyConfig.lambdav, lambda);
+    if (ell < 0 || ell >= _cloudyConfig.numLambda)
+        return 0.;
+    else
+        return state->getKappaAbs(ell);
 }
 
 ////////////////////////////////////////////////////////////////////
 
 double XRayIonicGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
-    int l = indexForOpacity(lambda);
-    return state->getKappaSca(l);
+    int ell = NR::locateFail(_cloudyConfig.lambdav, lambda);
+    if (ell < 0 || ell >= _cloudyConfig.numLambda)
+        return 0.;
+    else
+        return state->getKappaSca(ell);
 }
 
 ////////////////////////////////////////////////////////////////////
 
 double XRayIonicGasMix::opacityExt(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
-    int l = indexForOpacity(lambda);
-    return state->getKappaAbs(l) + state->getKappaSca(l);
+    int ell = NR::locateFail(_cloudyConfig.lambdav, lambda);
+    if (ell < 0 || ell >= _cloudyConfig.numLambda)
+        return 0.;
+    else
+        return state->getKappaAbs(ell) + state->getKappaSca(ell);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1150,7 +1050,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
     if (!scatinfo->valid)
     {
         scatinfo->valid = true;
-        int lam = NR::locateClip(_lambda, lambda);  // this should (almost) never have to clip
+        int lam = NR::locateClip(_cloudyConfig.lambdav, lambda);  // this should (almost) never have to clip
         // scattering can only happen if opacity is non-zero, so lambda should be in range of _lambdaC
         // maybe some Doppler shift but a simple clip should be sufficient
         Array kappaScaCum(numInter + 1);
@@ -1239,23 +1139,23 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
 
 DisjointWavelengthGrid* XRayIonicGasMix::emissionWavelengthGrid() const
 {
-    return _emissionGrid;
+    // return _emissionGrid;
 }
 
 ////////////////////////////////////////////////////////////////////
 
 Array XRayIonicGasMix::emissionSpectrum(const MaterialState* state, const Array& /*Jv*/) const
 {
-    // MAYBE BUILD THE 0 INTO THE TABLE BEFOREHAND? -> extra data and must convert anyway -> so no?
-    Array emis(cloudy::numLambda + 2);
-    emis[0] = 0.;
-    for (int l = 1; l < cloudy::numLambda + 1; l++)
-    {
-        emis[l] = state->getEmissivity(l);
-    }
-    emis[cloudy::numLambda + 1] = 0.;
+    // // MAYBE BUILD THE 0 INTO THE TABLE BEFOREHAND? -> extra data and must convert anyway -> so no?
+    // Array emis(cloudy::numLambda + 2);
+    // emis[0] = 0.;
+    // for (int l = 1; l < cloudy::numLambda + 1; l++)
+    // {
+    //     emis[l] = state->getEmissivity(l);
+    // }
+    // emis[cloudy::numLambda + 1] = 0.;
 
-    return emis * state->volume();
+    // return emis * state->volume();
 }
 
 // ////////////////////////////////////////////////////////////////////
