@@ -4,31 +4,34 @@
 
 ////////////////////////////////////////////////////////////////////
 
-class CustomSpace : public hnswlib::SpaceInterface<double>
+namespace
 {
-    size_t data_size_;
-    size_t dim_;
-    hnswlib::DISTFUNC<double> dist_func_;
-
-public:
-    CustomSpace(size_t dim, NNIndex::DistFunc dist_func)
+    class CustomSpace : public hnswlib::SpaceInterface<double>
     {
-        dim_ = dim;
-        data_size_ = dim * sizeof(double);
-        dist_func_ = dist_func;
-    }
+        size_t data_size_;
+        size_t dim_;
+        hnswlib::DISTFUNC<double> dist_func_;
 
-    size_t get_data_size() override { return data_size_; }
+    public:
+        CustomSpace(size_t dim, NNIndex::DistFunc dist_func)
+        {
+            dim_ = dim;
+            data_size_ = dim * sizeof(double);
+            dist_func_ = dist_func;
+        }
 
-    hnswlib::DISTFUNC<double> get_dist_func() override { return dist_func_; }
+        size_t get_data_size() override { return data_size_; }
 
-    void* get_dist_func_param() override { return &dim_; }
+        hnswlib::DISTFUNC<double> get_dist_func() override { return dist_func_; }
 
-private:
-    constexpr static double fhden = 1e0;
-    constexpr static double fmetal = 1e0;
-    constexpr static double frad = 1e0;
-};
+        void* get_dist_func_param() override { return &dim_; }
+
+    private:
+        constexpr static double fhden = 1e0;
+        constexpr static double fmetal = 1e0;
+        constexpr static double frad = 1e0;
+    };
+}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -57,7 +60,7 @@ vector<std::pair<double, size_t>> NNIndex::query(const double* point)
     if (knn.size() < _k || knn[_k - 1].first > _max_dist)
     {
         // found match
-        if (knn[0].first < 1e-6)  // min dist
+        if (knn.size() > 0 && knn[0].first < 1e-6)  // min dist
         {
             knn.resize(1);  // only leave the matching
             return knn;
@@ -91,6 +94,9 @@ void NNIndex::load()
         _hnsw = new hnswlib::HierarchicalNSW<double>(_space, _max_elements, _M, _ef_const);
 
     _current_elements = _hnsw->getCurrentElementCount();
+    _hnsw->max_elements_ = _max_elements;
+    _hnsw->M_ = _M;
+    _hnsw->ef_construction_ = _ef_const;
 }
 
 ////////////////////////////////////////////////////////////////////

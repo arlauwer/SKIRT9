@@ -72,21 +72,18 @@ public:
         if (!std::regex_match(ion, match, pattern)) throw FATALERROR("Could not parse ion format: " + ion);
 
         int Z, N;
-        if (match.length() == 1)
-        {
-            Z = atomMap.at(match[1].str());
+        string element = match[1].str();
+        string plus = match[2].str();
+        string number = match[3].str();
+
+        Z = atomMap.at(element);
+
+        if (number.empty() && plus.empty())
             N = 0;
-        }
-        else if (match.length() == 2)
-        {
-            Z = atomMap.at(match[1].str());
+        else if (number.empty())
             N = Z - 1;
-        }
         else
-        {
-            Z = atomMap.at(match[1].str());
-            N = Z - std::stoi(match[3].str());
-        }
+            N = Z - StringUtils::toInt(number);
 
         return Ion{Z, N};
     }

@@ -197,6 +197,11 @@ public:
         extlambdav() function over the wavelength range. */
     Array extdlambdav() const;
 
+    const Array& borderv() const { return _borderv; }
+
+    /** This function returns true if the wavelength bins are adjacent, i.e. with no gaps. */
+    bool isAdjacent() const { return _lambdav.size() == _borderv.size() - 1; }
+
     //======================== Data Members ========================
 
 private:

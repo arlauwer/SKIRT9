@@ -5,7 +5,6 @@
 
 #include "DisjointWavelengthGrid.hpp"
 #include "FatalError.hpp"
-#include "NR.hpp"
 
 ////////////////////////////////////////////////////////////////////
 

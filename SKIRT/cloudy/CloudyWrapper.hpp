@@ -13,7 +13,7 @@ class CloudyWrapper
 public:
     ~CloudyWrapper();
 
-    void setup(const CloudyConfig& config, const string& nnIndexPath);
+    void setup(const CloudyConfig& config, const string& basePath);
 
     void save();
 
@@ -21,13 +21,18 @@ public:
 
     Cloudy::Output query(const Cloudy::Input& input);
 
+    const Cloudy::Output& empty() const { return _empty; }
+
+    const string& templateContent() const { return _template; }
+
 private:
     void loadTemplate();
+
+    int nextFreeIndex();
 
     // paths
     string _basePath;
     string _runsPath;
-    string _nnIndexPath;
 
     // cloudy
     string _template;
@@ -44,6 +49,7 @@ private:
     std::mutex _mutex;                                                // lock for query
     size_t _current_label{0};                                         // technically no atomic needed
     std::unordered_map<size_t, std::shared_future<size_t>> _pending;  // hnsw label -> future index into _outputs
+    vector<bool> _free;
 };
 
 #endif

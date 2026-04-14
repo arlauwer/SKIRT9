@@ -4,8 +4,11 @@
 #include "FatalError.hpp"
 #include "StringUtils.hpp"
 #include "System.hpp"
+#include <algorithm>
 #include <cstdint>
+#include <iostream>
 #include <sstream>
+#include <string>
 
 ////////////////////////////////////////////////////////////////////
 
@@ -80,23 +83,24 @@ CloudyWrapper::~CloudyWrapper()
 
 ////////////////////////////////////////////////////////////////////
 
-void CloudyWrapper::setup(const CloudyConfig& config, const string& nnIndexPath)
+void CloudyWrapper::setup(const CloudyConfig& config, const string& basePath)
 {
     _cloudyConfig = config;
-    _nnIndexPath = nnIndexPath;
-    _basePath = StringUtils::dirPath(nnIndexPath);
+    _basePath = basePath;
     _runsPath = StringUtils::joinPaths(_basePath, "runs");
+    string nnIndexPath = StringUtils::joinPaths(_basePath, "cloudy.hnsw");
     if (!System::makeDir(_runsPath)) throw FATALERROR("Could not create the runs directory");
 
     loadTemplate();
 
     int dim = _cloudyConfig.numDims;
-    _nnIndex.setup(_nnIndexPath, dim, Cloudy_dist);
+    _nnIndex.setup(nnIndexPath, dim, Cloudy_dist);
 
     _empty.temp = 0.;
     _empty.abunv.resize(_cloudyConfig.numIons, 0.);
-    _empty.opacv.resize(_cloudyConfig.numLambda, 0.);
-    _empty.emisv.resize(_cloudyConfig.numLambda + 2, 0.);
+    _empty.opacv.resize(_cloudyConfig.numLambdaBins, 0.);
+    _empty.emisv.resize(_cloudyConfig.numLambdaBins, 0.);
+    _empty.linev.resize(_cloudyConfig.numLines, 0.);
 
     // load existing data if available
     load();
@@ -118,6 +122,7 @@ void CloudyWrapper::save()
         writeArray(out, data.abunv);
         writeArray(out, data.opacv);
         writeArray(out, data.emisv);
+        writeArray(out, data.linev);
     }
 }
 
@@ -140,6 +145,7 @@ void CloudyWrapper::load()
         readArray(in, data.abunv);
         readArray(in, data.opacv);
         readArray(in, data.emisv);
+        readArray(in, data.linev);
     }
     _current_label = count;
 }
@@ -148,6 +154,9 @@ void CloudyWrapper::load()
 
 Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 {
+    Cloudy::Output output;  // use copy to avoid race conditions
+    output.resize(_cloudyConfig.numLambdaBins, _cloudyConfig.numLines);
+
     const auto& hden = input.hden;
     const auto& metallicity = input.metal;
     const auto& radv = input.radv;
@@ -162,7 +171,8 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 
     double* pointData = std::begin(point);
 
-    std::unique_lock<std::mutex> lock(_mutex);  // lock
+    // ------------- LOCK -------------
+    std::unique_lock<std::mutex> lock(_mutex);
 
     // find approximate nearest neighbours
     vector<std::pair<double, size_t>> knn = _nnIndex.query(pointData);
@@ -170,27 +180,48 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     // make new cloudy point
     if (knn.empty())
     {
+        // add point to hnsw
         size_t label = _current_label++;
         _nnIndex.addPoint(pointData, label);
 
+        // make promise for result
         std::promise<size_t> promise;
-        _pending[label] = promise.get_future().share();
-        lock.unlock();  // unlock
+        auto future = promise.get_future().share();
+        _pending[label] = future;
+
+        // index used for naming cloudy runs
+        int threadIndex = nextFreeIndex();
 
         _outputs.emplace_back();
-        Cloudy::Output& output = _outputs.back();
+        Cloudy::Output& outputRef = _outputs.back();  // std::deque never invalidates references
+        outputRef.resize(_cloudyConfig.numLambdaBins, _cloudyConfig.numLines);
 
-        string cloudyPath = "";  // TODO
+        lock.unlock();
+        // ------------- UNLOCK -------------
+
+        string cloudyPath = StringUtils::joinPaths(_runsPath, StringUtils::toString(threadIndex));
         Cloudy cloudy(cloudyPath, _template, _cloudyConfig);
         cloudy.createInput(input);
         cloudy.execute();
-        cloudy.readOutput(output);
+        cloudy.readOutput(outputRef);
 
         {
-            std::unique_lock<std::mutex> lock(_mutex);  // lock
+            // ------------- LOCK -------------
+            std::unique_lock<std::mutex> lock(_mutex);
+
+            // deliver promise
             promise.set_value(label);
+
+            // remove (this shared) promise
             _pending.erase(label);
-        }  // unlock
+
+            // let other threads know the id we used is free
+            _free[threadIndex] = true;
+
+            output = outputRef;  // copy to avoid race conditions
+
+            // ------------- UNLOCK -------------
+        }
 
         return output;
     }
@@ -205,15 +236,26 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
         {
             auto fut = it->second;
             lock.unlock();
+            // ------------- UNLOCK -------------
+
             label = fut.get();  // wait until Cloudy run is done
         }
         // if not pending, return
         else
         {
             lock.unlock();
+            // ------------- UNLOCK -------------
         }
 
-        return _outputs[label];
+        {
+            // ------------- LOCK -------------
+            std::unique_lock<std::mutex> lock(_mutex);
+
+            output = _outputs[label];  // copy to avoid race conditions
+            // ------------- UNLOCK -------------
+        }
+
+        return output;
     }
     // interpolate
     else
@@ -232,22 +274,24 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
             else
                 futs.emplace_back();
         }
-        lock.unlock();  // unlock
 
         // perform interpolation with shared futures
-        Cloudy::Output interp;
         for (size_t i = 0; i < knn.size(); i++)
         {
             // get label from valid futures (wait) or from knn
             size_t label = futs[i].valid() ? futs[i].get() : knn[i].second;
-            double weight = total_dist ? (total_dist - knn[i].first) / total_dist : 1.;
-            const Cloudy::Output& output = _outputs[label];
-            interp.temp += weight * output.temp;
-            interp.abunv += weight * output.abunv;
-            interp.opacv += weight * output.opacv;
-            interp.emisv += weight * output.emisv;
+            double weight = (total_dist - knn[i].first) / total_dist;
+            const Cloudy::Output& outputRef = _outputs[label];
+            output.temp += weight * outputRef.temp;
+            output.abunv += weight * outputRef.abunv;
+            output.opacv += weight * outputRef.opacv;
+            output.emisv += weight * outputRef.emisv;
         }
-        return interp;
+
+        lock.unlock();
+        // ------------- UNLOCK -------------
+
+        return output;
     }
 
     return _empty;
@@ -257,12 +301,34 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 
 void CloudyWrapper::loadTemplate()
 {
-    std::ifstream in = System::ifstream(StringUtils::joinPaths(_basePath, "template.in"));
+    std::ifstream in = System::ifstream(StringUtils::joinPaths(_basePath, "XRayIonicGasMix_template.in"));
     std::ostringstream ss;
     ss << in.rdbuf();
     in.close();
     _template = ss.str();
     if (_template.empty()) throw FATALERROR("The template file is empty");
+}
+
+////////////////////////////////////////////////////////////////////
+
+int CloudyWrapper::nextFreeIndex()
+{
+    // find first free index
+    auto it = std::find(_free.begin(), _free.end(), true);
+    int index = it - _free.begin();
+
+    // if no free index found, add one and use it
+    if (it == _free.end())
+    {
+        _free.resize(_free.size() + 1, false);
+    }
+    // else use the found index
+    else
+    {
+        _free[index] = false;
+    }
+
+    return index;
 }
 
 ////////////////////////////////////////////////////////////////////

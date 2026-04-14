@@ -13,8 +13,13 @@ struct CloudyConfig
     double radMin;   // W/m2/m
 
     // --- Optical properties ---
-    Array lambdav;  // meter
-    int numLambda;
+    int numLambdaBins{-1};
+    Array lambdaBorderv;  // meter in ascending order
+
+    // --- Lines ---
+    int numLines{-1};
+    Array lineEmisCenterv;  // m
+    Array lineMassv;        // amu
 
     // --- Ions ---
     constexpr static int numIons = 465;  // might have variable number of ions later
@@ -39,10 +44,19 @@ public:
     // using SKIRT (SI) units
     struct Output
     {
-        double temp{0};
-        Array abunv;
-        Array opacv;
-        Array emisv;
+        void resize(int numBins, int numLines)
+        {
+            abunv.resize(CloudyConfig::numIons, 0.);
+            opacv.resize(numBins, 0.);
+            emisv.resize(numBins, 0.);
+            linev.resize(numLines, 0.);
+        }
+
+        double temp;
+        Array abunv;  // (1/m3)
+        Array opacv;  // (1/m)  ascending wavelength
+        Array emisv;  // (W/m3) ascending wavelength
+        Array linev;  // (W/m3)
     };
 
     Cloudy(string basePath, const string& inputTemplate, const CloudyConfig& config);
@@ -62,9 +76,13 @@ private:
 
     void readAbun(Output& output) const;
 
+    void binSegments(const string& fileName, Array& binnedSpectrum, size_t col) const;
+
     void readOpac(Output& output) const;
 
     void readEmis(Output& output) const;
+
+    void readLines(Output& output) const;
 
 private:
     string localPath(const string& filename) const;

@@ -82,7 +82,7 @@ namespace Constants
         constant \f$R_{\text{H}}\f$. */
     constexpr double iRyd()
     {
-        return 1 / 10973731.568157;
+        return 1. / 10973731.568157;
     }
 
     /** This function returns the solar mass. */

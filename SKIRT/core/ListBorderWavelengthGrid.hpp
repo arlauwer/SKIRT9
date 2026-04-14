@@ -57,6 +57,9 @@ class ListBorderWavelengthGrid : public DisjointWavelengthGrid
 
     //============= Construction - Setup - Destruction =============
 
+public:
+    explicit ListBorderWavelengthGrid(SimulationItem* parent, const vector<double>& borders, bool log, bool setup);
+
 protected:
     /** This function sets the wavelength grid to the bin borders specified by the \em wavelengths
         property. */

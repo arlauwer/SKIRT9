@@ -8,6 +8,21 @@
 
 ////////////////////////////////////////////////////////////////////
 
+ListBorderWavelengthGrid::ListBorderWavelengthGrid(SimulationItem* parent, const vector<double>& borders, bool log,
+                                                   bool setup)
+{
+    _wavelengths = borders;
+    _characteristic = log ? Characteristic::Logarithmic : Characteristic::Linear;
+
+    if (setup)
+    {
+        parent->addChild(this);
+        this->setup();
+    }
+}
+
+////////////////////////////////////////////////////////////////////
+
 void ListBorderWavelengthGrid::setupSelfBefore()
 {
     DisjointWavelengthGrid::setupSelfBefore();
