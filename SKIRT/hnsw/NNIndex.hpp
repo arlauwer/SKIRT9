@@ -29,6 +29,8 @@ public:
 
     size_t k() const { return _k; }
 
+    size_t size() const;
+
 private:
     string _hnswPath;
     int _dim;
@@ -39,9 +41,7 @@ private:
     int _ef_const{100};
     // custom params
     size_t _k{4};
-    double _max_dist{0.5};
-
-    size_t _current_elements{0};
+    double _max_dist{1.};
 
     // hnsw
     hnswlib::SpaceInterface<double>* _space{nullptr};

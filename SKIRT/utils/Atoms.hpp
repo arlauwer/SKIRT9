@@ -57,9 +57,7 @@ public:
     static inline short atomToZ(string element) { return atomMap.at(element); }
 
     /** This function returns the atomic number of the specified element. */
-    static inline double umass(int Z) { return masses[Z - 1]; }
-
-    static inline double mass(short Z) { return masses[Z - 1] * Constants::amu(); }
+    static inline double mass(int Z) { return masses[Z - 1]; }
 
     static inline Ion parseIon(string ion)
     {
@@ -79,7 +77,7 @@ public:
         Z = atomMap.at(element);
 
         if (number.empty() && plus.empty())
-            N = 0;
+            N = Z;
         else if (number.empty())
             N = Z - 1;
         else

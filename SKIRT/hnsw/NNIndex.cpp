@@ -93,7 +93,6 @@ void NNIndex::load()
     else
         _hnsw = new hnswlib::HierarchicalNSW<double>(_space, _max_elements, _M, _ef_const);
 
-    _current_elements = _hnsw->getCurrentElementCount();
     _hnsw->max_elements_ = _max_elements;
     _hnsw->M_ = _M;
     _hnsw->ef_construction_ = _ef_const;
@@ -104,6 +103,13 @@ void NNIndex::load()
 void NNIndex::save()
 {
     if (_hnsw) _hnsw->saveIndex(_hnswPath);
+}
+
+////////////////////////////////////////////////////////////////////
+
+size_t NNIndex::size() const
+{
+    return _hnsw->getCurrentElementCount();
 }
 
 ////////////////////////////////////////////////////////////////////

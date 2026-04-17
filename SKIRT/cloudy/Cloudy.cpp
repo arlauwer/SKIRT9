@@ -14,38 +14,38 @@
 namespace
 {
 
+    // 1/m3 -> 1/cm3
+    inline double toCloudyDensity(double hden)
+    {
+        return hden * 1e-6;
+    }
+
     // 1/cm3 -> 1/m3
-    inline double convertDensity(double hden)
+    inline double fromCloudyDensity(double hden)
     {
         return hden * 1e6;
     }
 
-    // 1 -> 1
-    inline double convertMetallicity(double metallicity)
-    {
-        return metallicity;
-    }
-
     // erg/s -> W
-    inline double convertLum(double lum)
+    inline double fromCloudyLum(double lum)
     {
         return lum * 1e-7;
     }
 
     // erg/s/cm2 -> W/m2
-    inline void convertInsArray(Array& ins)
+    inline void fromCloudyInsArray(Array& ins)
     {
         ins *= 1e-3;
     }
 
     // 1/cm -> 1/m
-    inline void convertOpacArray(Array& kappa)
+    inline void fromCloudyOpacArray(Array& kappa)
     {
         kappa *= 1e2;
     }
 
     // Ryd -> m
-    inline double convertWavelength(double E)
+    inline double fromCloudyWavelength(double E)
     {
         return Constants::iRyd() / E;
     }
@@ -90,8 +90,8 @@ void Cloudy::readOutput(Output& output) const
 
 void Cloudy::createSim(const Input& input) const
 {
-    double hden = convertDensity(input.hden);
-    double metal = convertMetallicity(input.metal);
+    double hden = toCloudyDensity(input.hden);
+    double metal = input.metal;
     double ins = 4. * M_PI * (input.radv * _cloudyConfig.radWidth).sum();
     ins = ins * 1e3;  // W/m2 -> erg/s/cm2
 
@@ -171,7 +171,7 @@ void Cloudy::readAbun(Output& output) const
         if (ion.N > 0)  // not fully ionized
         {
             int ionIndex = Atoms::ionIndex(ion);  // linear index
-            double abun = convertDensity(StringUtils::toDouble(speciesData[i]));
+            double abun = fromCloudyDensity(StringUtils::toDouble(speciesData[i]));
             output.abunv[ionIndex] = abun;
         }
     }
@@ -216,8 +216,8 @@ void Cloudy::binSegments(const string& fileName, Array& binnedSpectrum, size_t c
         double b1 = _cloudyConfig.lambdaBorderv[binIndex], b2 = _cloudyConfig.lambdaBorderv[binIndex + 1];
 
         // convert wavelength to m
-        x1 = convertWavelength(x1);
-        x2 = convertWavelength(x2);
+        x1 = fromCloudyWavelength(x1);
+        x2 = fromCloudyWavelength(x2);
 
         // skip non-overlapping cases
         if (x2 <= b1)
@@ -254,7 +254,7 @@ void Cloudy::binSegments(const string& fileName, Array& binnedSpectrum, size_t c
 void Cloudy::readOpac(Output& output) const
 {
     binSegments("sim.opac", output.opacv, 2);
-    convertOpacArray(output.opacv);
+    fromCloudyOpacArray(output.opacv);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -262,7 +262,7 @@ void Cloudy::readOpac(Output& output) const
 void Cloudy::readEmis(Output& output) const
 {
     binSegments("sim.emis", output.emisv, 3);
-    convertInsArray(output.emisv);
+    fromCloudyInsArray(output.emisv);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -285,7 +285,7 @@ void Cloudy::readLines(Output& output) const
     // skirt first col (depth)
     for (int i = 1; i < _cloudyConfig.numLines; i++)
     {
-        output.linev[i] = convertLum(StringUtils::toDouble(cols[i]));
+        output.linev[i] = fromCloudyLum(StringUtils::toDouble(cols[i]));
     }
 }
 

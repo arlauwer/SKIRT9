@@ -39,9 +39,9 @@ namespace
         if (n > 0) in.read(reinterpret_cast<char*>(&arr[0]), n * sizeof(double));
     }
 
-    constexpr static double fhden = 1e0;
-    constexpr static double fmetal = 1e0;
-    constexpr static double frad = 1e0;
+    constexpr static double fhden = 1.;   // 1 dex for hden is too far
+    constexpr static double fmetal = 5.;  // 0.2 diff in metal is too far
+    constexpr static double frad = 1.;    // 1 dex for the total rad field is too far (1/N for N bins)
 
     static double Cloudy_dist(const void* pVect1v, const void* pVect2v, const void* qty_ptr)
     {
@@ -52,7 +52,6 @@ namespace
         double res = 0;
 
         // log n
-        // fix this: n1 nor n2 should ever be zero!!!!
         res += fhden * std::abs(std::log10(*pVect1 / *pVect2));
         pVect1++;
         pVect2++;
@@ -63,13 +62,15 @@ namespace
         pVect2++;
 
         // log rad
+        double rad = 0.;
         for (size_t i = 0; i < qty - 2; i++)
         {
-            // should never be 0!
-            res += frad * std::abs(std::log10(*pVect1 / *pVect2));
+            rad += std::abs(std::log10(*pVect1 / *pVect2));
             pVect1++;
             pVect2++;
         }
+        res += frad * rad / (double)(qty - 2);
+
         return res;
     }
 }
@@ -132,6 +133,8 @@ void CloudyWrapper::load()
 {
     _nnIndex.load();
 
+    _current_label = _nnIndex.size();
+
     string binPath = StringUtils::joinPaths(_basePath, "cloudy.out");
     if (!System::isFile(binPath)) return;
     std::ifstream in(binPath, std::ios::binary);
@@ -147,7 +150,9 @@ void CloudyWrapper::load()
         readArray(in, data.emisv);
         readArray(in, data.linev);
     }
-    _current_label = count;
+
+    if (count != _current_label)
+        throw FATALERROR("CloudyWrapper::load mismatch between cloudy and hnsw number of points");
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -169,12 +174,16 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     point[1] = metallicity;
     point[std::slice(2, radv.size(), 1)] = radv;
 
+    // clamp radiation field to minimum value
+    for (int i = 0; i < (int)radv.size(); i++) point[i + 2] = std::max(radv[i], _cloudyConfig.radMin);
+
     double* pointData = std::begin(point);
 
     // ------------- LOCK -------------
     std::unique_lock<std::mutex> lock(_mutex);
 
     // find approximate nearest neighbours
+    // the knn vector is empty if a new cloudy run is required
     vector<std::pair<double, size_t>> knn = _nnIndex.query(pointData);
 
     // make new cloudy point
@@ -182,6 +191,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     {
         // add point to hnsw
         size_t label = _current_label++;
+
         _nnIndex.addPoint(pointData, label);
 
         // make promise for result
@@ -193,7 +203,9 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
         int threadIndex = nextFreeIndex();
 
         _outputs.emplace_back();
-        Cloudy::Output& outputRef = _outputs.back();  // std::deque never invalidates references
+        // std::deque never invalidates references
+        // so can be used outside the lock
+        Cloudy::Output& outputRef = _outputs.back();
         outputRef.resize(_cloudyConfig.numLambdaBins, _cloudyConfig.numLines);
 
         lock.unlock();
@@ -212,7 +224,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
             // deliver promise
             promise.set_value(label);
 
-            // remove (this shared) promise
+            // remove this (shared) promise
             _pending.erase(label);
 
             // let other threads know the id we used is free
@@ -269,11 +281,18 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
             total_dist += pair.first;
             auto it = _pending.find(pair.second);
             // if pending, add future
-            if (it != _pending.end()) futs.emplace_back(it->second);
+            if (it != _pending.end())
+            {
+                futs.emplace_back(it->second);
+            }
             // if not pending, add empty (invalid) future
             else
+            {
                 futs.emplace_back();
+            }
         }
+        lock.unlock();
+        // ------------- UNLOCK -------------
 
         // perform interpolation with shared futures
         for (size_t i = 0; i < knn.size(); i++)
@@ -281,15 +300,20 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
             // get label from valid futures (wait) or from knn
             size_t label = futs[i].valid() ? futs[i].get() : knn[i].second;
             double weight = (total_dist - knn[i].first) / total_dist;
-            const Cloudy::Output& outputRef = _outputs[label];
-            output.temp += weight * outputRef.temp;
-            output.abunv += weight * outputRef.abunv;
-            output.opacv += weight * outputRef.opacv;
-            output.emisv += weight * outputRef.emisv;
-        }
+            const Cloudy::Output* outputRef = nullptr;
+            {
+                // ------------- LOCK -------------
+                std::unique_lock<std::mutex> lock(_mutex);
 
-        lock.unlock();
-        // ------------- UNLOCK -------------
+                outputRef = &_outputs[label];  // never invalidated
+
+                // ------------- UNLOCK -------------
+            }
+            output.temp += weight * outputRef->temp;
+            output.abunv += weight * outputRef->abunv;
+            output.opacv += weight * outputRef->opacv;
+            output.emisv += weight * outputRef->emisv;
+        }
 
         return output;
     }

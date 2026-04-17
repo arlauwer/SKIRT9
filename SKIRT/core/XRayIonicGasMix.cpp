@@ -775,6 +775,7 @@ void XRayIonicGasMix::setupSelfBefore()
     vector<double> borders(std::begin(_cloudyConfig.lambdaBorderv), std::end(_cloudyConfig.lambdaBorderv));
     _emissionWavelengthGrid = new ListBorderWavelengthGrid(this, borders, true, true);
 
+    // cloudy wrapper
     string basePath = StringUtils::dirPath(FilePaths::resource("XRayIonicGasMix_template.in"));
     _cloudyWrapper.setup(_cloudyConfig, basePath);
 
@@ -909,8 +910,7 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 void XRayIonicGasMix::initializeSpecificState(MaterialState* state, double metallicity, double /*temperature*/,
                                               const Array& /*params*/) const
 {
-    // default metallicity
-    state->setMetallicity(metallicity >= 0. ? metallicity : 0.);
+    state->setMetallicity(metallicity >= 0. ? metallicity : defaultMetallicity());
 
     // initialize all cells to empty
     updateSpecificState(state, _cloudyWrapper.empty());
@@ -1213,6 +1213,8 @@ void XRayIonicGasMix::updateSpecificState(MaterialState* state, const Cloudy::Ou
         double lambda = _cloudyConfig.lambdaBorderv[ell];
         double abs = output.opacv[ell];
         double emi = output.emisv[ell];
+
+        if (std::isnan(abs) || std::isnan(emi)) throw FATALERROR("Cloudy::readOutput found NaN in opac or emis");
 
         state->setEmissivity(ell, emi);
         state->setKappaAbs(ell, abs);

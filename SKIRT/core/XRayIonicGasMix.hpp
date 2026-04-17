@@ -35,6 +35,10 @@ class XRayIonicGasMix : public EmittingGasMix
         ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
         ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level2")
 
+        PROPERTY_DOUBLE(defaultMetallicity, "default solar metallicity")
+        ATTRIBUTE_DEFAULT_VALUE(defaultMetallicity, "1.")
+        ATTRIBUTE_MIN_VALUE(defaultMetallicity, "[0")
+
         PROPERTY_ITEM(opticalWavelengthGrid, DisjointWavelengthGrid, "optical wavelength grid")
 
         PROPERTY_STRING(cloudyExecPath, "path to cloudy executable")
