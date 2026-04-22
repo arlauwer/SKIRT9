@@ -113,6 +113,7 @@ void CloudyWrapper::save()
 {
     _nnIndex.save();
 
+    // binary cloudy data
     std::ofstream out(StringUtils::joinPaths(_basePath, "cloudy.out"), std::ios::binary);
     size_t count = _outputs.size();
 
@@ -125,6 +126,15 @@ void CloudyWrapper::save()
         writeArray(out, data.emisv);
         writeArray(out, data.linev);
     }
+
+    // meta file
+    string metaPath = StringUtils::joinPaths(_basePath, "cloudy.meta");
+    std::ofstream meta(metaPath);
+    meta << _nnIndex.size() << std::endl;
+    meta << _nnIndex.k() << std::endl;
+    meta << _nnIndex.minDist() << std::endl;
+    meta << _nnIndex.maxDist() << std::endl;
+    meta.close();
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -132,9 +142,9 @@ void CloudyWrapper::save()
 void CloudyWrapper::load()
 {
     _nnIndex.load();
-
     _current_label = _nnIndex.size();
 
+    // binary cloudy data
     string binPath = StringUtils::joinPaths(_basePath, "cloudy.out");
     if (!System::isFile(binPath)) return;
     std::ifstream in(binPath, std::ios::binary);
@@ -151,8 +161,22 @@ void CloudyWrapper::load()
         readArray(in, data.linev);
     }
 
-    if (count != _current_label)
-        throw FATALERROR("CloudyWrapper::load mismatch between cloudy and hnsw number of points");
+    if (count != _current_label) throw FATALERROR("CloudyWrapper::load mismatch size");
+
+    // meta file
+    string metaPath = StringUtils::joinPaths(_basePath, "cloudy.meta");
+    if (!System::isFile(metaPath)) return;
+
+    std::ifstream meta(metaPath);
+    size_t size, k;
+    double minDist, maxDist;
+    meta >> size >> k >> minDist >> maxDist;
+    meta.close();
+
+    if (size != _nnIndex.size()) throw FATALERROR("CloudyWrapper::load mismatch size");
+    if (k != _nnIndex.k()) throw FATALERROR("CloudyWrapper::load mismatch k");
+    if (minDist != _nnIndex.minDist()) throw FATALERROR("CloudyWrapper::load mismatch  minDist");
+    if (maxDist != _nnIndex.maxDist()) throw FATALERROR("CloudyWrapper::load mismatch  maxDist");
 }
 
 ////////////////////////////////////////////////////////////////////

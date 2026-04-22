@@ -60,7 +60,7 @@ vector<std::pair<double, size_t>> NNIndex::query(const double* point)
     if (knn.size() < _k || knn[_k - 1].first > _max_dist)
     {
         // found match
-        if (knn.size() > 0 && knn[0].first < 1e-6)  // min dist
+        if (knn.size() > 0 && knn[0].first < _min_dist)
         {
             knn.resize(1);  // only leave the matching
             return knn;

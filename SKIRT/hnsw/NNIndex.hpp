@@ -27,9 +27,13 @@ public:
 
     void save();
 
+    size_t size() const;
+
     size_t k() const { return _k; }
 
-    size_t size() const;
+    double minDist() const { return _min_dist; }
+
+    double maxDist() const { return _max_dist; }
 
 private:
     string _hnswPath;
@@ -41,6 +45,7 @@ private:
     int _ef_const{100};
     // custom params
     size_t _k{4};
+    double _min_dist{1e-4};
     double _max_dist{1.};
 
     // hnsw
