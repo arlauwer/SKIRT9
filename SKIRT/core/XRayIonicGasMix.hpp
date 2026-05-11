@@ -19,21 +19,20 @@
 
 class XRayIonicGasMix : public EmittingGasMix
 {
-    ENUM_DEF(BoundElectrons, None, Free, FreeWithPolarization, Good, Exact)
-        ENUM_VAL(BoundElectrons, None, "ignore bound electrons")
-        ENUM_VAL(BoundElectrons, Free, "use free-electron Compton scattering")
-        ENUM_VAL(BoundElectrons, FreeWithPolarization,
+    ENUM_DEF(ElectronScattering, None, Free, FreeWithPolarization)
+        ENUM_VAL(ElectronScattering, None, "ignore electron")
+        ENUM_VAL(ElectronScattering, Free, "use free-electron Compton scattering for all electrons")
+        ENUM_VAL(ElectronScattering, FreeWithPolarization,
                  "use free-electron Compton scattering with support for polarization")
-        ENUM_VAL(BoundElectrons, Good, "use smooth Rayleigh scattering and exact bound-Compton scattering")
-        ENUM_VAL(BoundElectrons, Exact, "use anomalous Rayleigh scattering and exact bound-Compton scattering")
     ENUM_END()
 
-    ITEM_CONCRETE(XRayIonicGasMix, EmittingGasMix, "Ionised gas mix")
+    ITEM_CONCRETE(XRayIonicGasMix, EmittingGasMix,
+                  "An ionised gas mix using Cloudy to calculate the charge state and temperature self-consistently")
         ATTRIBUTE_TYPE_INSERT(XRayIonicGasMix, "GasMix,CustomMediumState")
 
-        PROPERTY_ENUM(scatterBoundElectrons, BoundElectrons, "implementation of scattering by bound electrons")
-        ATTRIBUTE_DEFAULT_VALUE(scatterBoundElectrons, "Good")
-        ATTRIBUTE_DISPLAYED_IF(scatterBoundElectrons, "Level2")
+        PROPERTY_ENUM(electronScattering, ElectronScattering, "implementation of scattering by electrons")
+        ATTRIBUTE_DEFAULT_VALUE(electronScattering, "Free")
+        ATTRIBUTE_DISPLAYED_IF(electronScattering, "Level3")
 
         PROPERTY_DOUBLE(defaultMetallicity, "default solar metallicity")
         ATTRIBUTE_DEFAULT_VALUE(defaultMetallicity, "1.")
@@ -151,7 +150,6 @@ private:
     Log* _log{nullptr};
 
     // bound-electron scattering helpers depending on the configured implementation
-    ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
     ScatteringHelper* _com{nullptr};  // Compton scattering helper
 
     // MediumState data
