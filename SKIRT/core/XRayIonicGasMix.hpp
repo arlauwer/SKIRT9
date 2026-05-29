@@ -38,8 +38,6 @@ class XRayIonicGasMix : public EmittingGasMix
         ATTRIBUTE_DEFAULT_VALUE(defaultMetallicity, "1.")
         ATTRIBUTE_MIN_VALUE(defaultMetallicity, "[0")
 
-        PROPERTY_ITEM(opticalWavelengthGrid, DisjointWavelengthGrid, "optical wavelength grid")
-
         PROPERTY_STRING(cloudyExecPath, "path to cloudy executable")
         ATTRIBUTE_DEFAULT_VALUE(cloudyExecPath, "/usr/local/bin/cloudy")
 
@@ -164,7 +162,7 @@ private:
     CloudyConfig _cloudyConfig;
     CloudyWrapper _cloudyWrapper;
 
-    DisjointWavelengthGrid* _emissionWavelengthGrid;
+    DisjointWavelengthGrid* _opticalWavelengthGrid;
 };
 
 #endif

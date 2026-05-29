@@ -18,6 +18,7 @@
 #include "MaterialState.hpp"
 #include "NR.hpp"
 #include "Random.hpp"
+#include "StringUtils.hpp"
 #include "TextInFile.hpp"
 #include "UpdateStatus.hpp"
 #include <array>
@@ -28,7 +29,7 @@ namespace
 {
     constexpr int numAtoms = CloudyConfig::numAtoms;
     constexpr int numIons = CloudyConfig::numIons;
-    constexpr int numInter = CloudyConfig::numIons;  // Compton scattering
+    constexpr int numInter = CloudyConfig::numAtoms;  // only free Compton scattering for each Z
     const auto ions = Atoms::initIons<numIons, numAtoms>();
 
     constexpr double vtherm(double T, double amu)
@@ -226,13 +227,16 @@ void XRayIonicGasMix::setupSelfBefore()
 
     // have to set this up before we can call setupCloudyConfig()
     // but setupCloudyConfig needs to be in the setupSelfBefore() function
-    opticalWavelengthGrid()->setup();
+    // opticalWavelengthGrid()->setup();
+
+    // WIP: LIMIT TO SIM WAV RANGE
+    TextInFile optGrid(this, "XRayIonicGasMix_grid.dat", "Optical wavelength grid", true);
+    optGrid.addColumn("Cloudy wavelength grid", "wavelength", "Ryd");
+    Array borders = optGrid.readAllColumns()[0];
+    vector<double> borderv(std::begin(borders), std::end(borders));
+    _opticalWavelengthGrid = new ListBorderWavelengthGrid(this, borderv, true, true);
 
     setupCloudyConfig();
-
-    // continuum emission wavelength grid
-    vector<double> borders(std::begin(_cloudyConfig.lambdaBorderv), std::end(_cloudyConfig.lambdaBorderv));
-    _emissionWavelengthGrid = new ListBorderWavelengthGrid(this, borders, true, true);
 
     // cloudy wrapper
     string basePath = StringUtils::dirPath(FilePaths::resource("XRayIonicGasMix_template.in"));
@@ -334,10 +338,19 @@ vector<StateVariable> XRayIonicGasMix::specificStateVariableInfo() const
 
     const_cast<XRayIonicGasMix*>(this)->_indexAbundances = index;
     for (int i = 0; i < numIons; i++)
-        result.push_back(StateVariable::custom(index++, "abundance", "numbervolumedensity"));
+    {
+        const auto ion = ions[i];
+        string name = Atoms::ionName(ion.Z, ion.N);
+
+        result.push_back(StateVariable::custom(index++, name + " abundance", "dimensionless"));
+    }
 
     const_cast<XRayIonicGasMix*>(this)->_indexThermalVelocity = index;
-    for (int a = 0; a < numAtoms; a++) result.push_back(StateVariable::custom(index++, "thermal velocity", "velocity"));
+    for (int a = 0; a < numAtoms; a++)
+    {
+        string Z = StringUtils::toString(a + 1);
+        result.push_back(StateVariable::custom(index++, "thermal velocity for Z=" + Z, "velocity"));
+    }
 
     const_cast<XRayIonicGasMix*>(this)->_indexKappaAbs = index;
     for (int l = 0; l < _cloudyConfig.numLambdaBins; l++)
@@ -476,7 +489,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
     if (!scatinfo->valid)
     {
         scatinfo->valid = true;
-        int lam = NR::locateClip(_cloudyConfig.lambdaBorderv, lambda);  // this should (almost) never have to clip
+        int lam = NR::locateClip(_cloudyConfig.lambdaBorderv, lambda);  // this should never have to clip
         // scattering can only happen if opacity is non-zero, so lambda should be in range of _lambdaC
         // maybe some Doppler shift but a simple clip should be sufficient
         Array kappaScaCum(numInter + 1);
@@ -484,8 +497,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* sc
 
         scatinfo->species = NR::locateClip(kappaScaCum, random()->uniform());
 
-        int i = scatinfo->species % numIons;
-        int Z = ions[i].Z;
+        int Z = scatinfo->species + 1;
 
         scatinfo->velocity = state->getVTherm(Z) * random()->maxwell();
     }
@@ -505,8 +517,8 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
 
     // Compton scattering in electron rest frame; with support for polarization if enabled
-    const auto& ion = ions[scatinfo->species];
-    _com->peeloffScattering(I, Q, U, V, lambda, ion.Z, pp->direction(), bfkobs, bfky, pp);
+    int Z = scatinfo->species + 1;
+    _com->peeloffScattering(I, Q, U, V, lambda, Z, pp->direction(), bfkobs, bfky, pp);
 
     // if we have dispersion, Doppler-shift the outgoing wavelength from the electron rest frame
     if (state->temperature() > 0.) lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
@@ -531,8 +543,8 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
 
     // Compton scattering, with support for polarization if enabled:
     // determine the new propagation direction and wavelength, and if polarized, update the stokes vector
-    const auto& ion = ions[scatinfo->species];
-    bfknew = _com->performScattering(lambda, ion.Z, pp->direction(), pp);
+    int Z = scatinfo->species + 1;
+    bfknew = _com->performScattering(lambda, Z, pp->direction(), pp);
 
     // if we have dispersion, Doppler-shift the outgoing wavelength from the electron rest frame
     if (state->temperature() > 0.) lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
@@ -545,7 +557,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
 
 DisjointWavelengthGrid* XRayIonicGasMix::emissionWavelengthGrid() const
 {
-    return _emissionWavelengthGrid;
+    return _opticalWavelengthGrid;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -596,9 +608,8 @@ void XRayIonicGasMix::setupCloudyConfig()
     auto config = find<Configuration>();
     auto radGrid = config->radiationFieldWLG();
 
+    // NOT ACTUALLY REQUIRED, JUST NEED SMALL REWORK OF SED.IN
     if (!radGrid->isAdjacent()) throw FATALERROR("Radiation field must consist of consecutive wavelength bins");
-    if (!opticalWavelengthGrid()->isAdjacent())
-        throw FATALERROR("Optical wavelength grid must consist of consecutive wavelength bins");
 
     // load optical wavelength grid
     TextInFile linesFile(this, "XRayIonicGasMix_lines.dat", "Cloudy lines", true);
@@ -613,8 +624,10 @@ void XRayIonicGasMix::setupCloudyConfig()
     _cloudyConfig.radMin = radMin();
 
     // --- Optical properties ---
-    _cloudyConfig.numLambdaBins = opticalWavelengthGrid()->numBins();
-    _cloudyConfig.lambdaBorderv = opticalWavelengthGrid()->borderv();
+    _cloudyConfig.numLambdaBins = _opticalWavelengthGrid->numBins();
+    _cloudyConfig.lambdaBorderv = _opticalWavelengthGrid->borderv();
+    _cloudyConfig.lambdaWidthv = _opticalWavelengthGrid->dlambdav();
+    _cloudyConfig.lambdav = _opticalWavelengthGrid->lambdav();
 
     // --- Lines ---
     _cloudyConfig.numLines = lines[0].size();
@@ -662,13 +675,19 @@ void XRayIonicGasMix::updateSpecificState(MaterialState* state, const Cloudy::Ou
         Array kappaScaFractions(numInter);
         Array kappaScaCum;
 
-        // electron scattering
-        for (int i = 0; i < numIons; i++)
-        {
-            double abun = output.abunv[i];
-            const auto& ion = ions[i];
+        // free electron scattering (independent of N)
 
-            kappaScaFractions[i] = _com->sectionSca(lambda, ion.Z) * abun;
+        // same order as Atoms::initIons
+        for (int Z = 1; Z <= numAtoms; Z++)
+        {
+            double abun = 0.;
+            // accumulate abundances of all ions of same Z
+            for (int N = 0; N <= Z; N++)
+            {
+                int i = Atoms::ionIndex(Z, N);
+                abun += output.abunv[i];
+            }
+            kappaScaFractions[Z - 1] = _com->sectionSca(lambda, Z) * abun;
         }
 
         // determine the normalized cumulative probability distribution and the cross section

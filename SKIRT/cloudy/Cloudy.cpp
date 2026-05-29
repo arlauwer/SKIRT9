@@ -3,7 +3,6 @@
 #include "Constants.hpp"
 #include "StringUtils.hpp"
 #include "System.hpp"
-#include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <iostream>
@@ -15,15 +14,15 @@ namespace
 {
 
     // 1/m3 -> 1/cm3
-    inline double toCloudyDensity(double hden)
+    inline double toCloudyDensity(double den)
     {
-        return hden * 1e-6;
+        return den * 1e-6;
     }
 
     // 1/cm3 -> 1/m3
-    inline double fromCloudyDensity(double hden)
+    inline double fromCloudyDensity(double den)
     {
-        return hden * 1e6;
+        return den * 1e6;
     }
 
     // erg/s -> W
@@ -32,10 +31,10 @@ namespace
         return lum * 1e-7;
     }
 
-    // erg/s/cm2 -> W/m2
+    // erg/s/cm3 -> W/m3
     inline void fromCloudyInsArray(Array& ins)
     {
-        ins *= 1e-3;
+        ins *= 1e-1;
     }
 
     // 1/cm -> 1/m
@@ -77,10 +76,10 @@ bool Cloudy::execute()
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::readOutput(Output& output) const
+void Cloudy::readOutput(const Input& input, Output& output) const
 {
     readTemp(output);
-    readAbun(output);
+    readAbun(input, output);
     readOpac(output);
     readEmis(output);
     readLines(output);
@@ -147,7 +146,7 @@ void Cloudy::readTemp(Output& output) const
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::readAbun(Output& output) const
+void Cloudy::readAbun(const Input& input, Output& output) const
 {
     output.abunv.resize(_cloudyConfig.numIons);
 
@@ -162,18 +161,17 @@ void Cloudy::readAbun(Output& output) const
     file.close();
     if (file.fail()) throw FATALERROR("Could not read from cloudy sim.species file " + _basePath);
 
+    double hden = toCloudyDensity(input.hden);
+
     auto speciesHeader = StringUtils::split(header, "\t");
     auto speciesData = StringUtils::split(line, "\t");
     for (size_t i = 1; i < speciesData.size() - 5; i++)  // skip columns: 1, -1, -2, -3, -4, -5
     {
         auto speciesName = speciesHeader[i];
-        Atoms::Ion ion = Atoms::parseIon(speciesName);
-        if (ion.N > 0)  // not fully ionized
-        {
-            int ionIndex = Atoms::ionIndex(ion);  // linear index
-            double abun = fromCloudyDensity(StringUtils::toDouble(speciesData[i]));
-            output.abunv[ionIndex] = abun;
-        }
+        Atoms::Ion ion = Atoms::parseIon(speciesName);  // reparses every output
+        int ionIndex = Atoms::ionIndex(ion);            // linear index
+        double abun = fromCloudyDensity(StringUtils::toDouble(speciesData[i]) / hden);
+        output.abunv[ionIndex] = abun;
     }
 }
 
@@ -181,72 +179,18 @@ void Cloudy::readAbun(Output& output) const
 
 void Cloudy::binSegments(const string& fileName, Array& binnedSpectrum, size_t col) const
 {
-    vector<double> segLambdav, segSpectrumv;  // at columns (0, col)
-
     string line;
-
     std::ifstream file = System::ifstream(localPath(fileName));
     if (!file.is_open()) throw FATALERROR("Could not open cloudy " + fileName + " file");
     getline(file, line);  // skip header
-    while (getline(file, line))
+    for (int i = _cloudyConfig.numLambdaBins - 1; getline(file, line); i--)
     {
         auto cols = StringUtils::split(line, "\t");
         if (cols.size() <= col) continue;
 
-        segLambdav.push_back(StringUtils::toDouble(cols[0]));
-        segSpectrumv.push_back(StringUtils::toDouble(cols[col]));
+        binnedSpectrum[i] = StringUtils::toDouble(cols[col]);
     }
     file.close();
-    int numFileLambda = segLambdav.size();
-
-    // convert x-y segments into binned spectrum
-
-    // reversed order since Cloudy uses ascending energy
-    int numLambdaBins = _cloudyConfig.numLambdaBins;
-    binnedSpectrum.resize(numLambdaBins, 0.);
-
-    int segIndex = 0;
-    int binIndex = 0;
-
-    while (segIndex < numFileLambda - 1 && binIndex < numLambdaBins)
-    {
-        int segRevIndex = numFileLambda - 1 - segIndex;
-        double x1 = segLambdav[segRevIndex], x2 = segLambdav[segRevIndex - 1];
-        double y1 = segSpectrumv[segRevIndex], y2 = segSpectrumv[segRevIndex - 1];
-        double b1 = _cloudyConfig.lambdaBorderv[binIndex], b2 = _cloudyConfig.lambdaBorderv[binIndex + 1];
-
-        // convert wavelength to m
-        x1 = fromCloudyWavelength(x1);
-        x2 = fromCloudyWavelength(x2);
-
-        // skip non-overlapping cases
-        if (x2 <= b1)
-        {
-            segIndex++;
-            continue;
-        }
-        if (b2 <= x1)
-        {
-            binIndex++;
-            continue;
-        }
-
-        // compute overlap and accumulate
-        double a = max(x1, b1), b = min(x2, b2);
-        double area = std::sqrt(y1 * y2) * (b - a);
-        binnedSpectrum[binIndex] += area;
-
-        // advance whichever ends first
-        if (x2 < b2)
-            segIndex++;  // segment ends first
-        else if (b2 < x2)
-            binIndex++;  // bin ends first
-        else
-        {
-            segIndex++;
-            binIndex++;
-        }  // both end at same point
-    }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -261,8 +205,10 @@ void Cloudy::readOpac(Output& output) const
 
 void Cloudy::readEmis(Output& output) const
 {
-    binSegments("sim.emis", output.emisv, 3);
+    binSegments("sim.emis", output.emisv, 1);
     fromCloudyInsArray(output.emisv);
+    // output.emisv /= _cloudyConfig.lambdaWidthv;  // W/m3 -> W/m3/m
+    output.emisv /= _cloudyConfig.lambdav;  // W/m3 -> W/m3/m
 }
 
 ////////////////////////////////////////////////////////////////////

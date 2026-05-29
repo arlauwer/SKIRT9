@@ -8,6 +8,8 @@
 #include <mutex>
 #include <unordered_map>
 
+// #define USE_HNSW
+
 class CloudyWrapper
 {
 public:
@@ -15,9 +17,11 @@ public:
 
     void setup(const CloudyConfig& config, const string& basePath);
 
+#ifdef USE_HNSW
     void save();
 
     void load();
+#endif
 
     Cloudy::Output query(const Cloudy::Input& input);
 
@@ -38,12 +42,14 @@ private:
     string _template;
     CloudyConfig _cloudyConfig;
 
+    Cloudy::Output _empty;
+#ifdef USE_HNSW
     // cloudy data
     std::deque<Cloudy::Output> _outputs;
-    Cloudy::Output _empty;
 
     // hnsw index
     NNIndex _nnIndex;
+#endif
 
     // thread safe
     std::mutex _mutex;                                                // lock for query

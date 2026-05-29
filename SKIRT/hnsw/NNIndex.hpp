@@ -45,8 +45,8 @@ private:
     int _ef_const{100};
     // custom params
     size_t _k{4};
-    double _min_dist{1e-4};
-    double _max_dist{1.};
+    double _min_dist{0.};
+    double _max_dist{0.};
 
     // hnsw
     hnswlib::SpaceInterface<double>* _space{nullptr};

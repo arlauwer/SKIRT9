@@ -79,7 +79,9 @@ namespace
 
 CloudyWrapper::~CloudyWrapper()
 {
+#ifdef USE_HNSW
     save();
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -94,29 +96,35 @@ void CloudyWrapper::setup(const CloudyConfig& config, const string& basePath)
 
     loadTemplate();
 
-    int dim = _cloudyConfig.numDims;
-    _nnIndex.setup(nnIndexPath, dim, Cloudy_dist);
-
     _empty.temp = 0.;
     _empty.abunv.resize(_cloudyConfig.numIons, 0.);
     _empty.opacv.resize(_cloudyConfig.numLambdaBins, 0.);
     _empty.emisv.resize(_cloudyConfig.numLambdaBins, 0.);
     _empty.linev.resize(_cloudyConfig.numLines, 0.);
 
+#ifdef USE_HNSW
+    int dim = _cloudyConfig.numDims;
+    _nnIndex.setup(nnIndexPath, dim, Cloudy_dist);
+
     // load existing data if available
     load();
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////
 
+#ifdef USE_HNSW
 void CloudyWrapper::save()
 {
+    std::cout << "Saving cloudy data" << std::endl;
+
+    if (_basePath.empty()) return;  // did not setup thus nothing to save
+
     _nnIndex.save();
 
     // binary cloudy data
-    std::ofstream out(StringUtils::joinPaths(_basePath, "cloudy.out"), std::ios::binary);
+    std::ofstream out(StringUtils::joinPaths(_basePath, "cloudy.out"), std::ios::binary | std::ios::trunc);
     size_t count = _outputs.size();
-
     write(out, count);
     for (Cloudy::Output& data : _outputs)
     {
@@ -126,6 +134,7 @@ void CloudyWrapper::save()
         writeArray(out, data.emisv);
         writeArray(out, data.linev);
     }
+    out.close();
 
     // meta file
     string metaPath = StringUtils::joinPaths(_basePath, "cloudy.meta");
@@ -160,6 +169,7 @@ void CloudyWrapper::load()
         readArray(in, data.emisv);
         readArray(in, data.linev);
     }
+    in.close();
 
     if (count != _current_label) throw FATALERROR("CloudyWrapper::load mismatch size");
 
@@ -178,6 +188,7 @@ void CloudyWrapper::load()
     if (minDist != _nnIndex.minDist()) throw FATALERROR("CloudyWrapper::load mismatch  minDist");
     if (maxDist != _nnIndex.maxDist()) throw FATALERROR("CloudyWrapper::load mismatch  maxDist");
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////
 
@@ -191,6 +202,8 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     const auto& radv = input.radv;
 
     if (hden == 0.) return _empty;
+
+#ifdef USE_HNSW
 
     // create query point
     Array point(_cloudyConfig.numDims);
@@ -213,6 +226,8 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     // make new cloudy point
     if (knn.empty())
     {
+        std::cout << "Running cloudy" << std::endl;
+
         // add point to hnsw
         size_t label = _current_label++;
 
@@ -239,7 +254,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
         Cloudy cloudy(cloudyPath, _template, _cloudyConfig);
         cloudy.createInput(input);
         cloudy.execute();
-        cloudy.readOutput(outputRef);
+        cloudy.readOutput(input, outputRef);
 
         {
             // ------------- LOCK -------------
@@ -264,6 +279,8 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     // found exact match
     else if (knn.size() == 1)
     {
+        std::cout << "Found exact match" << std::endl;
+
         size_t label = knn[0].second;
 
         auto it = _pending.find(label);
@@ -296,6 +313,8 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     // interpolate
     else
     {
+        std::cout << "Interpolating" << std::endl;
+
         double total_dist = 0.;
 
         // Collect all pending futures if pending
@@ -341,6 +360,36 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 
         return output;
     }
+#else
+    // ------------- LOCK -------------
+    std::unique_lock<std::mutex> lock(_mutex);
+
+    std::cout << "Running cloudy" << std::endl;
+
+    // index used for naming cloudy runs
+    int threadIndex = nextFreeIndex();
+
+    lock.unlock();
+    // ------------- UNLOCK -------------
+
+    string cloudyPath = StringUtils::joinPaths(_runsPath, StringUtils::toString(threadIndex));
+    Cloudy cloudy(cloudyPath, _template, _cloudyConfig);
+    cloudy.createInput(input);
+    cloudy.execute();
+    cloudy.readOutput(input, output);
+
+    {
+        // ------------- LOCK -------------
+        std::unique_lock<std::mutex> lock(_mutex);
+
+        _free[threadIndex] = true;
+
+        // ------------- UNLOCK -------------
+    }
+
+    return output;
+
+#endif
 
     return _empty;
 }

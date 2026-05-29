@@ -15,6 +15,8 @@ struct CloudyConfig
     // --- Optical properties ---
     int numLambdaBins{-1};
     Array lambdaBorderv;  // meter in ascending order
+    Array lambdaWidthv;   // meter
+    Array lambdav;        // meter
 
     // --- Lines ---
     int numLines{-1};
@@ -22,7 +24,7 @@ struct CloudyConfig
     Array lineMassv;        // amu
 
     // --- Ions ---
-    constexpr static int numIons = 465;  // might have variable number of ions later
+    constexpr static int numIons = 495;  // might have variable number of ions later
     constexpr static int numAtoms = 30;
 
     // --- Cloudy ---
@@ -52,11 +54,11 @@ public:
             linev.resize(numLines, 0.);
         }
 
-        double temp;
+        double temp{0.};
         Array abunv;  // (1/m3)
-        Array opacv;  // (1/m)  ascending wavelength
-        Array emisv;  // (W/m3) ascending wavelength
-        Array linev;  // (W/m3)
+        Array opacv;  // (1/m)    ascending wavelength
+        Array emisv;  // (W/m3/m) ascending wavelength
+        Array linev;  // (W/m3)   WIP
     };
 
     Cloudy(string basePath, const string& inputTemplate, const CloudyConfig& config);
@@ -65,7 +67,7 @@ public:
 
     bool execute();
 
-    void readOutput(Output& output) const;
+    void readOutput(const Input& input, Output& output) const;
 
 private:
     void createSim(const Input& input) const;
@@ -74,7 +76,7 @@ private:
 
     void readTemp(Output& output) const;
 
-    void readAbun(Output& output) const;
+    void readAbun(const Input& input, Output& output) const;
 
     void binSegments(const string& fileName, Array& binnedSpectrum, size_t col) const;
 

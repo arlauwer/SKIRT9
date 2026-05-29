@@ -55,21 +55,21 @@ void NNIndex::setup(const string& hnswPath, int dim, DistFunc distFunc)
 vector<std::pair<double, size_t>> NNIndex::query(const double* point)
 {
     auto knn = _hnsw->searchKnnCloserFirst(point, _k);
+    std::cout << "knn size " << knn.size() << std::endl;
+    if (knn.size() > 0.) std::cout << "dist " << knn[0].first << std::endl;
+
+    // found match
+    if (knn.size() > 0 && knn[0].first <= _min_dist)
+    {
+        knn.resize(1);  // only leave the matching
+        return knn;
+    }
 
     // if less than _k neighbours within _max_dist
     if (knn.size() < _k || knn[_k - 1].first > _max_dist)
     {
-        // found match
-        if (knn.size() > 0 && knn[0].first < _min_dist)
-        {
-            knn.resize(1);  // only leave the matching
-            return knn;
-        }
         // add new point and run cloudy
-        else
-        {
-            return {};  // else return empty list
-        }
+        return {};
     }
     else
     {

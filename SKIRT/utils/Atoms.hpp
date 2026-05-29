@@ -6,7 +6,6 @@
 #ifndef ATOMS_HPP
 #define ATOMS_HPP
 
-#include "Constants.hpp"
 #include "FatalError.hpp"
 #include "StringUtils.hpp"
 #include <map>
@@ -38,19 +37,38 @@ public:
         int N;  // number of electrons
     };
 
+    // Ions are ordered as such
+    // i    =   0,    1,    2,    3,    4,    5, ...
+    // name = H+1,  H+0, He+2, He+1, He+0, Li+3, ...
+    // Z-N  = 1-0, 1-1,   2-0,  2-1,  2-2,  3-0, ...
+    static inline int ionIndex(int Z, int N) { return Z * (Z + 1) / 2 + N - 1; }
+    static inline int ionIndex(Ion ion) { return ionIndex(ion.Z, ion.N); }
+
     template<int numIons, int numAtoms> constexpr static std::array<Ion, numIons> initIons()
     {
         std::array<Ion, numIons> ions{};
         for (int Z = 1; Z <= numAtoms; Z++)
         {
-            for (int N = 1; N <= Z; N++)
+            for (int N = 0; N <= Z; N++)
             {
-                int i = Z * (Z - 1) / 2 + (N - 1);
+                int i = ionIndex(Z, N);
                 ions[i].Z = Z;
                 ions[i].N = N;
             }
         }
         return ions;
+    }
+
+    static string ionName(int Z, int N)
+    {
+        auto it = std::find_if(atomMap.begin(), atomMap.end(), [Z](const auto& pair) { return pair.second == Z; });
+        if (it == atomMap.end()) throw FATALERROR("Could not find element for Z = " + std::to_string(Z));
+
+        if (N < 0 || N > Z)
+            throw FATALERROR("Invalid ionization number for (Z,N) = (" + std::to_string(Z) + "," + std::to_string(N)
+                             + ")");
+
+        return it->first + "+" + std::to_string(Z - N);
     }
 
     /** This function returns the atomic number of the specified elements. */
@@ -85,20 +103,6 @@ public:
 
         return Ion{Z, N};
     }
-
-    // Ions are ordered as such
-    //   0,    1,    2,    3,    4,    5, ...
-    // H+0, He+0, He+1, Li+0, Li+1, Li+2, ...
-    // Fully ionized (H+1) are not present
-    static inline int ionIndex(Ion ion) { return ion.Z * (ion.Z - 1) / 2 + (ion.Z - ion.N); }
-
-    // // reverse of ionIndex
-    // static inline std::pair<int, int> ionIndex(int i)
-    // {
-    //     int Z = (int)((1 + std::sqrt(1 + 8.0 * i)) / 2);
-    //     int N = Z - (i - Z * (Z - 1) / 2);
-    //     return std::make_pair(Z, N);
-    // }
 };
 
 #endif
