@@ -55,7 +55,7 @@ public:
         }
 
         double temp{0.};
-        Array abunv;  // (1/m3)
+        Array abunv;  // (1/hden)
         Array opacv;  // (1/m)    ascending wavelength
         Array emisv;  // (W/m3/m) ascending wavelength
         Array linev;  // (W/m3)   WIP

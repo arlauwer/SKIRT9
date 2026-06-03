@@ -375,7 +375,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     string cloudyPath = StringUtils::joinPaths(_runsPath, StringUtils::toString(threadIndex));
     Cloudy cloudy(cloudyPath, _template, _cloudyConfig);
     cloudy.createInput(input);
-    cloudy.execute();
+    if (!cloudy.execute()) throw FATALERROR("Cloudy encountered an error for path:" + cloudyPath);
     cloudy.readOutput(input, output);
 
     {

@@ -168,9 +168,9 @@ void Cloudy::readAbun(const Input& input, Output& output) const
     for (size_t i = 1; i < speciesData.size() - 5; i++)  // skip columns: 1, -1, -2, -3, -4, -5
     {
         auto speciesName = speciesHeader[i];
-        Atoms::Ion ion = Atoms::parseIon(speciesName);  // reparses every output
-        int ionIndex = Atoms::ionIndex(ion);            // linear index
-        double abun = fromCloudyDensity(StringUtils::toDouble(speciesData[i]) / hden);
+        Atoms::Ion ion = Atoms::parseIon(speciesName);               // reparses every output
+        int ionIndex = Atoms::ionIndex(ion);                         // linear index
+        double abun = StringUtils::toDouble(speciesData[i]) / hden;  // abundance relative to hden
         output.abunv[ionIndex] = abun;
     }
 }
