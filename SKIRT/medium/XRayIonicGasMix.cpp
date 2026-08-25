@@ -426,6 +426,17 @@ XRayIonicGasMix::XRayIonicGasMix(SimulationItem* parent, string ions, vector<dou
 
 void XRayIonicGasMix::setupSelfBefore()
 {
+    /*
+	   The setup performs all prior calculations that are needed during the simulation.
+	   This is organized in the following steps:
+	   1. Parse user properties
+	   2. Load the resources for all present ions
+	   3. Preprocess resources by adding more fluorescent data that is implied from the resonant data
+	   4. Postprocess resources by adding data that is not present in the resources
+	   5. Calculate the persistent data that is needed during the simulation.
+	   6. Calculate and store the cross section for each wavelength 
+	*/
+
     MaterialMix::setupSelfBefore();
 
     auto config = find<Configuration>();
@@ -547,8 +558,8 @@ void XRayIonicGasMix::setupSelfBefore()
     // ------------ postprocess resources ------------
 
     int numPa = paResources.size();
-    int numFluo = fluoResources.size();
-    int numLine = lineResources.size();
+    _numFluo = fluoResources.size();
+    _numLine = lineResources.size();
 
     // store the cross reference indices for pa, fluo, and res
     for (int i = 0; i < _numIons; i++)
@@ -625,10 +636,6 @@ void XRayIonicGasMix::setupSelfBefore()
 
     // ------------ calculate/store persistent data ------------
 
-    // get the relevant range (intersection of simulation range and nonzero range)
-    Range wavelengthRange = config->simulationWavelengthRange();
-    wavelengthRange.intersect(nonZeroRange);
-
     // The persistent data is the data that is needed beyond the setup (scattering)
     // No changes should be made to the usedFlr, usedLines, or usedBranchRs arrays after this point.
     // The usedFlr and usedLines arrays need to remain consistent with the persistent parameter arrays.
@@ -636,25 +643,16 @@ void XRayIonicGasMix::setupSelfBefore()
     // Fluorescence
     // Store the Z, wavelength, and width of each fluorescence transition.
     // These are needed when scattering photons after a photo-absorption event.
-    _fluorescenceParamv.reserve(numFluo);
-    for (int f = 0; f != numFluo; ++f)
+    _fluorescenceParamv.resize(_numFluo);
+    for (int f = 0; f != _numFluo; ++f)
     {
         const auto& fluoRes = fluoResources[f];
+        auto& fluo = _fluorescenceParamv[f];
 
-        double lambda = wavelengthToFromEnergy(fluoRes.E);
-
-        if (wavelengthRange.contains(lambda))
-        {
-            _fluorescenceParamv.emplace_back();
-            auto& fluo = _fluorescenceParamv.back();
-
-            fluo.vth = vtherm(fluoRes.Z);
-            fluo.lambda = lambda;
-            fluo.width = fluoRes.W / 2.;  // convert from FWHM to HWHM
-        }
+        fluo.vth = vtherm(fluoRes.Z);
+        fluo.lambda = wavelengthToFromEnergy(fluoRes.E);
+        fluo.width = fluoRes.W / 2.;  // convert from FWHM to HWHM
     }
-    _fluorescenceParamv.shrink_to_fit();
-    _numFluo = _fluorescenceParamv.size();
 
     // Resonant scattering
     // Store the ion index, Z, line index, wavelength, Voigt parameter and the cumulative branching
@@ -662,41 +660,34 @@ void XRayIonicGasMix::setupSelfBefore()
     // the branch to scatter to.
     if (resonantScattering())
     {
-        _resonantParamv.reserve(numLine);
+        _resonantParamv.resize(_numLine);
 
-        for (int r = 0; r != numLine; ++r)
+        for (int r = 0; r != _numLine; ++r)
         {
             const auto& lineRes = lineResources[r];
+            auto& res = _resonantParamv[r];
 
-            if (wavelengthRange.contains(lineRes.lam))
+            res.ionIndex = lineRes.ionIndex;
+            res.lineIndex = lineRes.lineIndex;
+            res.vth = vtherm(lineRes.Z);
+            res.lambda = lineRes.lam;
+            res.a = voigtA(lineRes.lamGamma, res.vth);
+            res.dipoleFraction = dipoleFractionFromJ(lineRes.lowerJ, lineRes.upperJ);
+
+            int upper = res.lineIndex;
+
+            // branching probability
+            Array scatProb(0., upper + 1);  // can only decay to lower index
+            for (const auto& braRes : branchResources)
             {
-                _resonantParamv.emplace_back();
-                auto& res = _resonantParamv.back();
-
-                res.ionIndex = lineRes.ionIndex;
-                res.lineIndex = lineRes.lineIndex;
-                res.vth = vtherm(lineRes.Z);
-                res.lambda = lineRes.lam;
-                res.a = voigtA(lineRes.lamGamma, res.vth);
-                res.dipoleFraction = dipoleFractionFromJ(lineRes.lowerJ, lineRes.upperJ);
-
-                int upper = res.lineIndex;
-
-                // branching probability
-                Array scatProb(0., upper + 1);  // can only decay to lower index
-                for (const auto& braRes : branchResources)
-                {
-                    if (braRes.ionIndex == res.ionIndex && braRes.upperIndex == upper)
-                        scatProb[braRes.lowerIndex] = braRes.prob;
-                }
-
-                // store the cumulative
-                NR::cdf(res.cumBranchingv, scatProb);
+                if (braRes.ionIndex == res.ionIndex && braRes.upperIndex == upper)
+                    scatProb[braRes.lowerIndex] = braRes.prob;
             }
+
+            // store the cumulative
+            NR::cdf(res.cumBranchingv, scatProb);
         }
-        _resonantParamv.shrink_to_fit();
     }
-    _numLine = resonantScattering() ? _resonantParamv.size() : 0;
 
     // ------------ wavelength grid ------------
 
@@ -708,6 +699,10 @@ void XRayIonicGasMix::setupSelfBefore()
     //  - 7 extra wavelength points around the threshold energies for all transitions,
     //    placed at -2, -4/3, -2/3, 0, 2/3, 4/3, 2 times the thermal energy dispersion
 
+    // get the relevant range (intersection of simulation range and nonzero range)
+    Range range = config->simulationWavelengthRange();
+    range.intersect(nonZeroRange);
+
     // we first gather all the wavelength points, in arbitrary order, and then sort them
     vector<double> lambdav;
     lambdav.reserve(5 * numWavelengthsPerDex);
@@ -715,13 +710,13 @@ void XRayIonicGasMix::setupSelfBefore()
     // add a fine grid in log space;
     // use integer multiples as logarithmic grid points so that the grid is stable for changing wavelength ranges
     constexpr double numPerDex = numWavelengthsPerDex;  // converted to double to avoid casting
-    int minLambdaSerial = std::floor(numPerDex * log10(wavelengthRange.min()));
-    int maxLambdaSerial = std::ceil(numPerDex * log10(wavelengthRange.max()));
+    int minLambdaSerial = std::floor(numPerDex * log10(range.min()));
+    int maxLambdaSerial = std::ceil(numPerDex * log10(range.max()));
     for (int k = minLambdaSerial; k <= maxLambdaSerial; ++k) lambdav.push_back(pow(10., k / numPerDex));
 
     // add the wavelengths mentioned in the configuration of the simulation
     for (double lambda : config->simulationWavelengths())
-        if (wavelengthRange.contains(lambda)) lambdav.push_back(lambda);
+        if (range.contains(lambda)) lambdav.push_back(lambda);
 
     // add wavelength points around the threshold energies for all transitions
     for (const auto& paRes : paResources)
@@ -730,7 +725,7 @@ void XRayIonicGasMix::setupSelfBefore()
         for (double delta : {-2., -4. / 3., -2. / 3., 0., 2. / 3., 4. / 3., 2.})
         {
             double lambda = wavelengthToFromEnergy(paRes.Eth + delta * Es);
-            if (wavelengthRange.contains(lambda)) lambdav.push_back(lambda);
+            if (range.contains(lambda)) lambdav.push_back(lambda);
         }
     }
 
@@ -738,7 +733,7 @@ void XRayIonicGasMix::setupSelfBefore()
     for (const auto& fluoRes : fluoResources)
     {
         double lambda = wavelengthToFromEnergy(fluoRes.E);
-        if (wavelengthRange.contains(lambda)) lambdav.push_back(lambda);
+        if (range.contains(lambda)) lambdav.push_back(lambda);
     }
 
     // add the outer wavelengths of our nonzero range, plus an extra just outside of that range,

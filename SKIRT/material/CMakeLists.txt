@@ -25,8 +25,8 @@ target_link_libraries(${TARGET} schema fundamentals)
 include_directories(../../SMILE/schema ../../SMILE/fundamentals)
 
 # add direct SKIRT library dependencies
-target_link_libraries(${TARGET} grain mpi tools utils wavelength)
-include_directories(../grain ../mpi ../tools ../utils ../wavelength)
+target_link_libraries(${TARGET} grain mpi tools utils wavelength faddeeva)
+include_directories(../grain ../mpi ../tools ../utils ../wavelength ../faddeeva)
 
 # add indirect SKIRT library dependencies (needed transitively via the direct ones above)
 target_link_libraries(${TARGET} fitsio)
