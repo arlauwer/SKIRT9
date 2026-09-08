@@ -21,20 +21,6 @@ bool CylindricalClipGeometryDecorator::inside(Position bfr) const
 
 ////////////////////////////////////////////////////////////////////
 
-double CylindricalClipGeometryDecorator::SigmaX() const
-{
-    return geometry()->SigmaX() * norm();
-}
-
-////////////////////////////////////////////////////////////////////
-
-double CylindricalClipGeometryDecorator::SigmaY() const
-{
-    return geometry()->SigmaY() * norm();
-}
-
-////////////////////////////////////////////////////////////////////
-
 double CylindricalClipGeometryDecorator::SigmaZ() const
 {
     if (remove() == Remove::Inside)
