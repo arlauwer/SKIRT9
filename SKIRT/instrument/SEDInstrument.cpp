@@ -1,0 +1,27 @@
+/*//////////////////////////////////////////////////////////////////
+////     The SKIRT project -- advanced radiative transfer       ////
+////       © Astronomical Observatory, Ghent University         ////
+///////////////////////////////////////////////////////////////// */
+
+#include "SEDInstrument.hpp"
+#include "FluxRecorder.hpp"
+#include "PhotonPacket.hpp"
+
+////////////////////////////////////////////////////////////////////
+
+void SEDInstrument::setupSelfBefore()
+{
+    ApertureInstrument::setupSelfBefore();
+
+    // configure flux recorder
+    instrumentFluxRecorder()->includeFluxDensityForDistant();
+}
+
+////////////////////////////////////////////////////////////////////
+
+void SEDInstrument::detect(PhotonPacket* pp)
+{
+    if (isInsideAperture(pp)) instrumentFluxRecorder()->detect(pp, 0);
+}
+
+////////////////////////////////////////////////////////////////////
