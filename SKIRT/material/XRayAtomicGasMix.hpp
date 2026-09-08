@@ -7,6 +7,7 @@
 #define XRAYATOMICGASMIX_HPP
 
 #include "ArrayTable.hpp"
+#include "ElectronScatteringHelper.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
 
@@ -463,10 +464,6 @@ public:
     double indicativeTemperature(const MaterialState* state, const Array& Jv) const override;
 
     //======================== Data Members ========================
-
-public:
-    // base class for bound-electron scattering helpers (public because we derive from it in anonymous namespace)
-    class ScatteringHelper;
 
 private:
     // all data members are precalculated in setupSelfBefore()

@@ -8,6 +8,7 @@
 
 #include "ArrayTable.hpp"
 #include "DipolePhaseFunction.hpp"
+#include "ElectronScatteringHelper.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
 
@@ -495,10 +496,6 @@ public:
     double indicativeTemperature(const MaterialState* state, const Array& Jv) const override;
 
     //======================== Data Members ========================
-
-public:
-    // base class for electron scattering helpers (public because we derive from it in anonymous namespace)
-    class ScatteringHelper;
 
 private:
     // all of the data below is calculated in the setupSelfBefore(), but is persistent for use after setup to perform scattering
