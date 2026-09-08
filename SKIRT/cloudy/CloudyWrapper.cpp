@@ -398,7 +398,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 
 void CloudyWrapper::loadTemplate()
 {
-    std::ifstream in = System::ifstream(StringUtils::joinPaths(_basePath, "XRayIonicGasMix_template.in"));
+    std::ifstream in = System::ifstream(StringUtils::joinPaths(_basePath, "XRayCloudyGasMix_template.in"));
     std::ostringstream ss;
     ss << in.rdbuf();
     in.close();

@@ -36,8 +36,8 @@ target_link_libraries(${TARGET} serialize schema fundamentals build)
 include_directories(../../SMILE/serialize ../../SMILE/schema ../../SMILE/fundamentals ../../SMILE/build)
 
 # add direct SKIRT library dependencies
-target_link_libraries(${TARGET} field geometry grain instrument material medium mpi probe sed source tools utils wavelength)
-include_directories(../field ../geometry ../grain ../instrument ../material ../medium ../mpi ../probe ../sed ../source ../tools ../utils ../wavelength)
+target_link_libraries(${TARGET} field geometry grain instrument material medium mpi probe sed source tools utils wavelength cloudy hnsw)
+include_directories(../field ../geometry ../grain ../instrument ../material ../medium ../mpi ../probe ../sed ../source ../tools ../utils ../wavelength ../cloudy ../hnsw)
 
 # add indirect SKIRT library dependencies (needed transitively via the direct ones above)
 target_link_libraries(${TARGET} fitsio tetgen voro)
