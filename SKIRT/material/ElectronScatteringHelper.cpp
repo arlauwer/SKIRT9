@@ -102,33 +102,39 @@ namespace
 ScatteringHelper::~ScatteringHelper() {}
 
 // peel-off unpolarized scattering event: this in helpers that don't support polarization
-void ScatteringHelper::peeloffScattering(double& /*I*/, double& /*lambda*/, int /*Z*/, Direction /*bfk*/,
+void ScatteringHelper::peeloffScattering(double& /*I*/, double& /*lambda*/, int /*Z*/, int /*N*/, Direction /*bfk*/,
                                          Direction /*bfkobs*/) const
 {
     // default implementation does nothing
 }
 
+////////////////////////////////////////////////////////////////////
+
 // perform unpolarized scattering event: this in helpers that don't support polarization
-Direction ScatteringHelper::performScattering(double& /*lambda*/, int /*Z*/, Direction /*bfk*/) const
+Direction ScatteringHelper::performScattering(double& /*lambda*/, int /*Z*/, int /*N*/, Direction /*bfk*/) const
 {
     // default implementation returns null vector
     return Direction();
 }
 
+////////////////////////////////////////////////////////////////////
+
 // peel-off polarized scattering event: this in helpers that do support polarization
 void ScatteringHelper::peeloffScattering(double& I, double& /*Q*/, double& /*U*/, double& /*V*/, double& lambda, int Z,
-                                         Direction bfk, Direction bfkobs, Direction /*bfky*/,
+                                         int N, Direction bfk, Direction bfkobs, Direction /*bfky*/,
                                          const StokesVector* /*sv*/) const
 {
     // default implementation calls unpolarized version
-    peeloffScattering(I, lambda, Z, bfk, bfkobs);
+    peeloffScattering(I, lambda, Z, N, bfk, bfkobs);
 }
 
+////////////////////////////////////////////////////////////////////
+
 // perform polarized scattering event: this in helpers that do support polarization
-Direction ScatteringHelper::performScattering(double& lambda, int Z, Direction bfk, StokesVector* /*sv*/) const
+Direction ScatteringHelper::performScattering(double& lambda, int Z, int N, Direction bfk, StokesVector* /*sv*/) const
 {
     // default implementation calls unpolarized version
-    return performScattering(lambda, Z, bfk);
+    return performScattering(lambda, Z, N, bfk);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -137,7 +143,9 @@ Direction ScatteringHelper::performScattering(double& lambda, int Z, Direction b
 
 NoScatteringHelper::NoScatteringHelper(SimulationItem* /*item*/) {}
 
-double NoScatteringHelper::sectionSca(double /*lambda*/, int /*Z*/) const
+////////////////////////////////////////////////////////////////////
+
+double NoScatteringHelper::sectionSca(double /*lambda*/, int /*Z*/, int /*N*/) const
 {
     return 0.;
 }
@@ -153,14 +161,19 @@ FreeComptonHelper::FreeComptonHelper(SimulationItem* item)
     _dpf.initialize(random);
 }
 
-double FreeComptonHelper::sectionSca(double lambda, int Z) const
+////////////////////////////////////////////////////////////////////
+
+double FreeComptonHelper::sectionSca(double lambda, int Z, int /*N*/) const
 {
     double sigma = Z * Constants::sigmaThomson();
     if (lambda < comptonWL) sigma *= _cpf.sectionSca(lambda);
     return sigma;
 }
 
-void FreeComptonHelper::peeloffScattering(double& I, double& lambda, int /*Z*/, Direction bfk, Direction bfkobs) const
+////////////////////////////////////////////////////////////////////
+
+void FreeComptonHelper::peeloffScattering(double& I, double& lambda, int /*Z*/, int /*N*/, Direction bfk,
+                                          Direction bfkobs) const
 {
     if (lambda < comptonWL)
     {
@@ -174,7 +187,9 @@ void FreeComptonHelper::peeloffScattering(double& I, double& lambda, int /*Z*/, 
     }
 }
 
-Direction FreeComptonHelper::performScattering(double& lambda, int /*Z*/, Direction bfk) const
+////////////////////////////////////////////////////////////////////
+
+Direction FreeComptonHelper::performScattering(double& lambda, int /*Z*/, int /*N*/, Direction bfk) const
 {
     return lambda < comptonWL ? _cpf.performScattering(lambda, bfk, nullptr) : _dpf.performScattering(bfk, nullptr);
 }
@@ -190,22 +205,28 @@ FreeComptonWithPolarizationHelper::FreeComptonWithPolarizationHelper(SimulationI
     _dpf.initialize(random, true);
 }
 
-double FreeComptonWithPolarizationHelper::sectionSca(double lambda, int Z) const
+////////////////////////////////////////////////////////////////////
+
+double FreeComptonWithPolarizationHelper::sectionSca(double lambda, int Z, int /*N*/) const
 {
     double sigma = Z * Constants::sigmaThomson();
     if (lambda < comptonWL) sigma *= _cpf.sectionSca(lambda);
     return sigma;
 }
 
+////////////////////////////////////////////////////////////////////
+
 void FreeComptonWithPolarizationHelper::peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda,
-                                                          int /*Z*/, Direction bfk, Direction bfkobs, Direction bfky,
-                                                          const StokesVector* sv) const
+                                                          int /*Z*/, int /*N*/, Direction bfk, Direction bfkobs,
+                                                          Direction bfky, const StokesVector* sv) const
 {
     lambda < comptonWL ? _cpf.peeloffScattering(I, Q, U, V, lambda, bfk, bfkobs, bfky, sv)
                        : _dpf.peeloffScattering(I, Q, U, V, bfk, bfkobs, bfky, sv);
 }
 
-Direction FreeComptonWithPolarizationHelper::performScattering(double& lambda, int /*Z*/, Direction bfk,
+////////////////////////////////////////////////////////////////////
+
+Direction FreeComptonWithPolarizationHelper::performScattering(double& lambda, int /*Z*/, int /*N*/, Direction bfk,
                                                                StokesVector* sv) const
 {
     return lambda < comptonWL ? _cpf.performScattering(lambda, bfk, sv) : _dpf.performScattering(bfk, sv);
@@ -261,13 +282,17 @@ BoundComptonHelper::BoundComptonHelper(SimulationItem* item)
     _random = item->find<Random>();
 }
 
-double BoundComptonHelper::sectionSca(double lambda, int Z) const
+////////////////////////////////////////////////////////////////////
+
+double BoundComptonHelper::sectionSca(double lambda, int Z, int /*N*/) const
 {
     // interpolate from table, and:
     // - below lower table limit: cross section must be zero so don't clamp values
     // - above upper table limit: does not matter because this limit coincides with the global upper limit
     return NR::value<NR::interpolateLogLog>(scaledEnergy(lambda), _CSv[0], _CSv[Z]);
 }
+
+////////////////////////////////////////////////////////////////////
 
 double BoundComptonHelper::phaseFunctionValue(double x, double costheta, int Z) const
 {
@@ -280,6 +305,8 @@ double BoundComptonHelper::phaseFunctionValue(double x, double costheta, int Z) 
     double incoherent = interpolateQ(x, sintheta2, _SFv[0], _SFv[Z]);
     return norm / section * phase * incoherent;
 }
+
+////////////////////////////////////////////////////////////////////
 
 double BoundComptonHelper::generateCosineFromPhaseFunction(double x, double Z) const
 {
@@ -296,6 +323,8 @@ double BoundComptonHelper::generateCosineFromPhaseFunction(double x, double Z) c
     // draw a random cosine from this distribution
     return _random->cdfLinLin(_costhetav, thetaXv);
 }
+
+////////////////////////////////////////////////////////////////////
 
 // sample a target electron momentum from the distribution with the given maximum
 double BoundComptonHelper::sampleMomentum(double pmax, double Z) const
@@ -326,6 +355,8 @@ double BoundComptonHelper::sampleMomentum(double pmax, double Z) const
     }
 }
 
+////////////////////////////////////////////////////////////////////
+
 // returns the augmented inverse Compton factor
 double BoundComptonHelper::augmentedInverseComptonFactor(double x, double costheta, double Z) const
 {
@@ -345,7 +376,10 @@ double BoundComptonHelper::augmentedInverseComptonFactor(double x, double costhe
     return 1. + x * costheta1 - p * sintheta22;
 }
 
-void BoundComptonHelper::peeloffScattering(double& I, double& lambda, int Z, Direction bfk, Direction bfkobs) const
+////////////////////////////////////////////////////////////////////
+
+void BoundComptonHelper::peeloffScattering(double& I, double& lambda, int Z, int /*N*/, Direction bfk,
+                                           Direction bfkobs) const
 {
     double x = scaledEnergy(lambda);
 
@@ -360,7 +394,9 @@ void BoundComptonHelper::peeloffScattering(double& I, double& lambda, int Z, Dir
     lambda *= augmentedInverseComptonFactor(x, costheta, Z);
 }
 
-Direction BoundComptonHelper::performScattering(double& lambda, int Z, Direction bfk) const
+////////////////////////////////////////////////////////////////////
+
+Direction BoundComptonHelper::performScattering(double& lambda, int Z, int /*N*/, Direction bfk) const
 {
     double x = scaledEnergy(lambda);
 
@@ -372,6 +408,54 @@ Direction BoundComptonHelper::performScattering(double& lambda, int Z, Direction
 
     // determine the new propagation direction
     return _random->direction(bfk, costheta);
+}
+
+////////////////////////////////////////////////////////////////////
+
+// ---- free-bound Compton scattering helper ----
+
+FreeBoundComptonHelper::FreeBoundComptonHelper(SimulationItem* item) : _free(item), _bound(item)
+{
+    _random = item->find<Random>();
+}
+
+////////////////////////////////////////////////////////////////////
+
+double FreeBoundComptonHelper::sectionSca(double lambda, int Z, int N) const
+{
+    double b = (double)N / (double)Z;  // bound fraction
+    return (1. - b) * _free.sectionSca(lambda, Z, N) + b * _bound.sectionSca(lambda, Z, N);
+}
+
+////////////////////////////////////////////////////////////////////
+
+void FreeBoundComptonHelper::peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk,
+                                               Direction bfkobs) const
+{
+    double b = (double)N / (double)Z;  // bound fraction
+    double sigmaFree = (1. - b) * _free.sectionSca(lambda, Z, N);
+    double sigmaBound = b * _bound.sectionSca(lambda, Z, N);
+
+    double pFree = sigmaFree / (sigmaFree + sigmaBound);
+    if (pFree < _random->uniform())
+        return _bound.peeloffScattering(I, lambda, Z, N, bfk, bfkobs);
+    else
+        return _free.peeloffScattering(I, lambda, Z, N, bfk, bfkobs);
+}
+
+////////////////////////////////////////////////////////////////////
+
+Direction FreeBoundComptonHelper::performScattering(double& lambda, int Z, int N, Direction bfk) const
+{
+    double b = (double)N / (double)Z;  // bound fraction
+    double sigmaFree = (1. - b) * _free.sectionSca(lambda, Z, N);
+    double sigmaBound = b * _bound.sectionSca(lambda, Z, N);
+
+    double pFree = sigmaFree / (sigmaFree + sigmaBound);
+    if (pFree < _random->uniform())
+        return _bound.performScattering(lambda, Z, N, bfk);
+    else
+        return _free.performScattering(lambda, Z, N, bfk);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -405,7 +489,9 @@ SmoothRayleighHelper::SmoothRayleighHelper(SimulationItem* item)
     }
 }
 
-double SmoothRayleighHelper::sectionSca(double lambda, int Z) const
+////////////////////////////////////////////////////////////////////
+
+double SmoothRayleighHelper::sectionSca(double lambda, int Z, int /*N*/) const
 {
     // interpolate from table, and:
     // - below lower table limit: use Z^2 * Thomson scattering
@@ -414,6 +500,8 @@ double SmoothRayleighHelper::sectionSca(double lambda, int Z) const
     if (x < _RSSv[0][0]) return Z * Z * Constants::sigmaThomson();
     return NR::value<NR::interpolateLogLog>(x, _RSSv[0], _RSSv[Z]);
 }
+
+////////////////////////////////////////////////////////////////////
 
 double SmoothRayleighHelper::phaseFunctionValue(double x, double costheta, int Z) const
 {
@@ -424,6 +512,8 @@ double SmoothRayleighHelper::phaseFunctionValue(double x, double costheta, int Z
     double form = interpolateQ(x, sintheta2, _FFv[0], _FFv[Z]);
     return norm / section * phase * form * form;
 }
+
+////////////////////////////////////////////////////////////////////
 
 double SmoothRayleighHelper::generateCosineFromPhaseFunction(double x, double Z) const
 {
@@ -440,7 +530,10 @@ double SmoothRayleighHelper::generateCosineFromPhaseFunction(double x, double Z)
     return _random->cdfLinLin(_costhetav, thetaXv);
 }
 
-void SmoothRayleighHelper::peeloffScattering(double& I, double& lambda, int Z, Direction bfk, Direction bfkobs) const
+////////////////////////////////////////////////////////////////////
+
+void SmoothRayleighHelper::peeloffScattering(double& I, double& lambda, int Z, int /*N*/, Direction bfk,
+                                             Direction bfkobs) const
 {
     double x = scaledEnergy(lambda);
 
@@ -463,7 +556,9 @@ void SmoothRayleighHelper::peeloffScattering(double& I, double& lambda, int Z, D
     }
 }
 
-Direction SmoothRayleighHelper::performScattering(double& lambda, int Z, Direction bfk) const
+////////////////////////////////////////////////////////////////////
+
+Direction SmoothRayleighHelper::performScattering(double& lambda, int Z, int /*N*/, Direction bfk) const
 {
     double x = scaledEnergy(lambda);
 
@@ -512,7 +607,9 @@ AnomalousRayleighHelper::AnomalousRayleighHelper(SimulationItem* item)
     }
 }
 
-double AnomalousRayleighHelper::sectionSca(double lambda, int Z) const
+////////////////////////////////////////////////////////////////////
+
+double AnomalousRayleighHelper::sectionSca(double lambda, int Z, int /*N*/) const
 {
     // interpolate from table, and:
     // - below lower table limit: use Z^2 * Thomson scattering
@@ -522,7 +619,9 @@ double AnomalousRayleighHelper::sectionSca(double lambda, int Z) const
     return NR::clampedValue<NR::interpolateLogLog>(x, _RSAv[2 * Z], _RSAv[2 * Z + 1]);
 }
 
-double AnomalousRayleighHelper::phaseFunctionValue(double x, double costheta, int Z) const
+////////////////////////////////////////////////////////////////////
+
+double AnomalousRayleighHelper::phaseFunctionValue(double x, double costheta, int Z, int /*N*/) const
 {
     constexpr double norm = 3. / 4. * Constants::sigmaThomson();
     double phase = 1. + costheta * costheta;
@@ -534,6 +633,8 @@ double AnomalousRayleighHelper::phaseFunctionValue(double x, double costheta, in
     double formsum = form + form1;
     return norm / section * phase * (formsum * formsum + form2 * form2);
 }
+
+////////////////////////////////////////////////////////////////////
 
 double AnomalousRayleighHelper::generateCosineFromPhaseFunction(double x, double Z) const
 {
@@ -553,7 +654,10 @@ double AnomalousRayleighHelper::generateCosineFromPhaseFunction(double x, double
     return _random->cdfLinLin(_costhetav, thetaXv);
 }
 
-void AnomalousRayleighHelper::peeloffScattering(double& I, double& lambda, int Z, Direction bfk, Direction bfkobs) const
+////////////////////////////////////////////////////////////////////
+
+void AnomalousRayleighHelper::peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk,
+                                                Direction bfkobs) const
 {
     double x = scaledEnergy(lambda);
 
@@ -569,14 +673,16 @@ void AnomalousRayleighHelper::peeloffScattering(double& I, double& lambda, int Z
     {
         // calculate the value of the phase function
         double costheta = Vec::dot(bfk, bfkobs);
-        double value = phaseFunctionValue(x, costheta, Z);
+        double value = phaseFunctionValue(x, costheta, Z, N);
 
         // accumulate the weighted sum in the intensity
         I += value;
     }
 }
 
-Direction AnomalousRayleighHelper::performScattering(double& lambda, int Z, Direction bfk) const
+////////////////////////////////////////////////////////////////////
+
+Direction AnomalousRayleighHelper::performScattering(double& lambda, int Z, int /*N*/, Direction bfk) const
 {
     double x = scaledEnergy(lambda);
 

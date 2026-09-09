@@ -329,6 +329,7 @@ void XRayIonicGasMix::setupSelfBefore()
         case ElectronScattering::None: _com = new NoScatteringHelper(this); break;
         case ElectronScattering::Free: _com = new FreeComptonHelper(this); break;
         case ElectronScattering::FreeWithPolarization: _com = new FreeComptonWithPolarizationHelper(this); break;
+        case ElectronScattering::FreeBound: _com = new FreeBoundComptonHelper(this); break;
     }
 
     if (resonantScattering())
@@ -613,7 +614,7 @@ void XRayIonicGasMix::setupSelfBefore()
         for (int i = 0; i < _numIons; i++)
         {
             const auto& ion = _ionParamv[i];
-            sigma += _com->sectionSca(lambda, ion.Z) * abundances[i];
+            sigma += _com->sectionSca(lambda, ion.Z, ion.N) * abundances[i];
         }
 
         // photo-absorption and fluorescence
@@ -657,7 +658,7 @@ void XRayIonicGasMix::setupSelfBefore()
         {
             const auto& ion = _ionParamv[i];
 
-            sigmas[i] = _com->sectionSca(lambda, ion.Z) * abundances[i];
+            sigmas[i] = _com->sectionSca(lambda, ion.Z, ion.N) * abundances[i];
         }
 
         // fluorescence: iterate over both cross section and fluorescence parameter sets in sync
@@ -929,7 +930,7 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
         const auto& ion = _ionParamv[i];
         // transform the wavelength into the rest frame of the electron
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
-        _com->peeloffScattering(I, Q, U, V, lambda, ion.Z, pp->direction(), bfkobs, bfky, pp);
+        _com->peeloffScattering(I, Q, U, V, lambda, ion.Z, ion.N, pp->direction(), bfkobs, bfky, pp);
         lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
         return false;
     }
@@ -984,7 +985,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
         int i = scatinfo->species;
         const auto& ion = _ionParamv[i];
         lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
-        bfknew = _com->performScattering(lambda, ion.Z, pp->direction(), pp);
+        bfknew = _com->performScattering(lambda, ion.Z, ion.N, pp->direction(), pp);
         lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
     }
 

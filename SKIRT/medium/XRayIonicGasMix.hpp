@@ -311,11 +311,12 @@
 class XRayIonicGasMix : public MaterialMix
 {
     /** The enumeration type indicating the implementation used for scattering by electrons. */
-    ENUM_DEF(ElectronScattering, None, Free, FreeWithPolarization)
+    ENUM_DEF(ElectronScattering, None, Free, FreeWithPolarization, FreeBound)
         ENUM_VAL(ElectronScattering, None, "ignore electron")
         ENUM_VAL(ElectronScattering, Free, "use free-electron Compton scattering for all electrons")
         ENUM_VAL(ElectronScattering, FreeWithPolarization,
                  "use free-electron Compton scattering with support for polarization")
+        ENUM_VAL(ElectronScattering, FreeBound, "use an interpolation of free- and bound-electron Compton scattering")
     ENUM_END()
 
     ITEM_CONCRETE(XRayIonicGasMix, MaterialMix,

@@ -23,22 +23,20 @@ public:
     virtual ~ScatteringHelper();
 
     // return scattering cross section for atom in m2
-    virtual double sectionSca(double lambda, int Z) const = 0;
+    virtual double sectionSca(double lambda, int Z, int N) const = 0;
 
     // peel-off unpolarized scattering event: override this in helpers that don't support polarization
-    virtual void peeloffScattering(double& /*I*/, double& /*lambda*/, int /*Z*/, Direction /*bfk*/,
-                                   Direction /*bfkobs*/) const;
+    virtual void peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk, Direction bfkobs) const;
 
     // perform unpolarized scattering event: override this in helpers that don't support polarization
-    virtual Direction performScattering(double& /*lambda*/, int /*Z*/, Direction /*bfk*/) const;
+    virtual Direction performScattering(double& lambda, int Z, int N, Direction bfk) const;
 
     // peel-off polarized scattering event: override this in helpers that do support polarization
-    virtual void peeloffScattering(double& I, double& /*Q*/, double& /*U*/, double& /*V*/, double& lambda, int Z,
-                                   Direction bfk, Direction bfkobs, Direction /*bfky*/,
-                                   const StokesVector* /*sv*/) const;
+    virtual void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, int Z, int N,
+                                   Direction bfk, Direction bfkobs, Direction bfky, const StokesVector* sv) const;
 
     // perform polarized scattering event: override this in helpers that do support polarization
-    virtual Direction performScattering(double& lambda, int Z, Direction bfk, StokesVector* /*sv*/) const;
+    virtual Direction performScattering(double& lambda, int Z, int N, Direction bfk, StokesVector* sv) const;
 };
 
 ////////////////////////////////////////////////////////////////////
@@ -49,9 +47,9 @@ public:
 class NoScatteringHelper : public ScatteringHelper
 {
 public:
-    NoScatteringHelper(SimulationItem* /*item*/);
+    NoScatteringHelper(SimulationItem* item);
 
-    double sectionSca(double /*lambda*/, int /*Z*/) const override;
+    double sectionSca(double lambda, int Z, int N) const override;
 };
 
 ////////////////////////////////////////////////////////////////////
@@ -69,11 +67,11 @@ private:
 public:
     FreeComptonHelper(SimulationItem* item);
 
-    double sectionSca(double lambda, int Z) const override;
+    double sectionSca(double lambda, int Z, int N) const override;
 
-    void peeloffScattering(double& I, double& lambda, int /*Z*/, Direction bfk, Direction bfkobs) const override;
+    void peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk, Direction bfkobs) const override;
 
-    Direction performScattering(double& lambda, int /*Z*/, Direction bfk) const override;
+    Direction performScattering(double& lambda, int Z, int N, Direction bfk) const override;
 };
 
 ////////////////////////////////////////////////////////////////////
@@ -91,12 +89,12 @@ private:
 public:
     FreeComptonWithPolarizationHelper(SimulationItem* item);
 
-    double sectionSca(double lambda, int Z) const override;
+    double sectionSca(double lambda, int Z, int N) const override;
 
-    void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, int /*Z*/, Direction bfk,
+    void peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, int Z, int N, Direction bfk,
                            Direction bfkobs, Direction bfky, const StokesVector* sv) const override;
 
-    Direction performScattering(double& lambda, int /*Z*/, Direction bfk, StokesVector* sv) const override;
+    Direction performScattering(double& lambda, int Z, int N, Direction bfk, StokesVector* sv) const override;
 };
 
 ////////////////////////////////////////////////////////////////////
@@ -129,7 +127,7 @@ private:
 public:
     BoundComptonHelper(SimulationItem* item);
 
-    double sectionSca(double lambda, int Z) const override;
+    double sectionSca(double lambda, int Z, int N) const override;
 
 private:
     double phaseFunctionValue(double x, double costheta, int Z) const;
@@ -143,9 +141,33 @@ private:
     double augmentedInverseComptonFactor(double x, double costheta, double Z) const;
 
 public:
-    void peeloffScattering(double& I, double& lambda, int Z, Direction bfk, Direction bfkobs) const override;
+    void peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk, Direction bfkobs) const override;
 
-    Direction performScattering(double& lambda, int Z, Direction bfk) const override;
+    Direction performScattering(double& lambda, int Z, int N, Direction bfk) const override;
+};
+
+////////////////////////////////////////////////////////////////////
+
+// ---- free-bound Compton scattering helper ----
+
+// this helper implements an interpolation of free- and bound-Compton scattering
+class FreeBoundComptonHelper : public ScatteringHelper
+{
+private:
+    FreeComptonHelper _free;
+    BoundComptonHelper _bound;
+
+    Random* _random{nullptr};
+
+public:
+    FreeBoundComptonHelper(SimulationItem* item);
+
+    double sectionSca(double lambda, int Z, int N) const override;
+
+public:
+    void peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk, Direction bfkobs) const override;
+
+    Direction performScattering(double& lambda, int Z, int N, Direction bfk) const override;
 };
 
 ////////////////////////////////////////////////////////////////////
@@ -171,7 +193,7 @@ private:
 public:
     SmoothRayleighHelper(SimulationItem* item);
 
-    double sectionSca(double lambda, int Z) const override;
+    double sectionSca(double lambda, int Z, int N) const override;
 
 private:
     double phaseFunctionValue(double x, double costheta, int Z) const;
@@ -179,9 +201,9 @@ private:
     double generateCosineFromPhaseFunction(double x, double Z) const;
 
 public:
-    void peeloffScattering(double& I, double& lambda, int Z, Direction bfk, Direction bfkobs) const override;
+    void peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk, Direction bfkobs) const override;
 
-    Direction performScattering(double& lambda, int Z, Direction bfk) const override;
+    Direction performScattering(double& lambda, int Z, int N, Direction bfk) const override;
 };
 
 ////////////////////////////////////////////////////////////////////
@@ -209,17 +231,17 @@ private:
 public:
     AnomalousRayleighHelper(SimulationItem* item);
 
-    double sectionSca(double lambda, int Z) const override;
+    double sectionSca(double lambda, int Z, int N) const override;
 
 private:
-    double phaseFunctionValue(double x, double costheta, int Z) const;
+    double phaseFunctionValue(double x, double costheta, int Z, int N) const;
 
     double generateCosineFromPhaseFunction(double x, double Z) const;
 
 public:
-    void peeloffScattering(double& I, double& lambda, int Z, Direction bfk, Direction bfkobs) const override;
+    void peeloffScattering(double& I, double& lambda, int Z, int N, Direction bfk, Direction bfkobs) const override;
 
-    Direction performScattering(double& lambda, int Z, Direction bfk) const override;
+    Direction performScattering(double& lambda, int Z, int N, Direction bfk) const override;
 };
 
 ////////////////////////////////////////////////////////////////////
