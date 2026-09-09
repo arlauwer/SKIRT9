@@ -331,6 +331,7 @@ void XRayIonicGasMix::setupSelfBefore()
         case ElectronScattering::FreeWithPolarization: _com = new FreeComptonWithPolarizationHelper(this); break;
         case ElectronScattering::FreeBound: _com = new FreeBoundComptonHelper(this); break;
     }
+    _numElec = electronScattering() == ElectronScattering::None ? 0 : _numIons;
 
     if (resonantScattering())
     {
@@ -611,7 +612,7 @@ void XRayIonicGasMix::setupSelfBefore()
         double sigma = 0.;
 
         // electron scattering
-        for (int i = 0; i < _numIons; i++)
+        for (int i = 0; i < _numElec; i++)
         {
             const auto& ion = _ionParamv[i];
             sigma += _com->sectionSca(lambda, ion.Z, ion.N) * abundances[i];
@@ -644,7 +645,7 @@ void XRayIonicGasMix::setupSelfBefore()
     _cumsigmascavv.resize(numLambda, 0);
 
     // provide temporary array for the non-normalized fluorescence/scattering contributions (at the current wavelength)
-    int numInteractions = _numIons + _numFluo + _numLine;
+    int numInteractions = _numElec + _numFluo + _numLine;
     Array sigmas(numInteractions);
 
     // calculate the above for every wavelength; as before, leave the values for the outer wavelength points at zero
@@ -654,7 +655,7 @@ void XRayIonicGasMix::setupSelfBefore()
         double E = wavelengthToFromEnergy(lambda);
 
         // electron scattering
-        for (int i = 0; i < _numIons; i++)
+        for (int i = 0; i < _numElec; i++)
         {
             const auto& ion = _ionParamv[i];
 
@@ -668,7 +669,7 @@ void XRayIonicGasMix::setupSelfBefore()
             const auto& paRes = paResources[fluoRes.paIndex];
 
             double sigma = paRes.photoAbsorbThermalSection(E) * abundances[paRes.ionIndex] * fluoRes.omega;
-            sigmas[_numIons + f] = sigma;
+            sigmas[_numElec + f] = sigma;
         }
 
         // resonant scattering
@@ -680,7 +681,7 @@ void XRayIonicGasMix::setupSelfBefore()
 
                 double vth = vtherm(lineRes.Z);
                 double sigma = lineRes.section(lambda, vth) * abundances[lineRes.ionIndex] * lineRes.scatterProb;
-                sigmas[_numIons + _numFluo + r] = sigma;
+                sigmas[_numElec + _numFluo + r] = sigma;
             }
         }
 
@@ -825,16 +826,16 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
         scatinfo->species = NR::locateClip(_cumsigmascavv[indexForLambda(lambda)], random()->uniform());
 
         // Compton scattering
-        if (scatinfo->species < _numIons)
+        if (scatinfo->species < _numElec)
         {
             int i = scatinfo->species;
             const auto& ion = _ionParamv[i];
             scatinfo->velocity = vtherm(ion.Z) * random()->maxwell();
         }
         // Fluorescent emission (scattering)
-        else if (scatinfo->species < _numIons + _numFluo)
+        else if (scatinfo->species < _numElec + _numFluo)
         {
-            int f = scatinfo->species - _numIons;
+            int f = scatinfo->species - _numElec;
             const auto& fluo = _fluorescenceParamv[f];
             double lambda = fluo.lambda;
             double width = fluo.width;
@@ -862,7 +863,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
         // Resonant scattering
         else
         {
-            int r = scatinfo->species - _numIons - _numFluo;
+            int r = scatinfo->species - _numElec - _numFluo;
             const auto& res = _resonantParamv[r];
 
             int upper = res.lineIndex;
@@ -924,7 +925,7 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     auto scatinfo = const_cast<PhotonPacket*>(pp)->getScatteringInfo();
 
     // Compton scattering in electron rest frame; with support for polarization if enabled
-    if (scatinfo->species < _numIons)
+    if (scatinfo->species < _numElec)
     {
         int i = scatinfo->species;
         const auto& ion = _ionParamv[i];
@@ -936,7 +937,7 @@ bool XRayIonicGasMix::peeloffScattering(double& I, double& Q, double& U, double&
     }
 
     // fluorescence
-    else if (scatinfo->species < _numIons + _numFluo)
+    else if (scatinfo->species < _numElec + _numFluo)
     {
         // unpolarized isotropic emission; the bias weight is trivially 1 and there is no contribution to Q, U, V
         I = 1.;
@@ -980,7 +981,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
 
     // Compton scattering, with support for polarization if enabled:
     // determine the new propagation direction and wavelength, and if polarized, update the stokes vector
-    if (scatinfo->species < _numIons)
+    if (scatinfo->species < _numElec)
     {
         int i = scatinfo->species;
         const auto& ion = _ionParamv[i];
@@ -990,7 +991,7 @@ void XRayIonicGasMix::performScattering(double lambda, const MaterialState* stat
     }
 
     // fluorescence, always unpolarized and isotropic
-    else if (scatinfo->species < _numIons + _numFluo)
+    else if (scatinfo->species < _numElec + _numFluo)
     {
         // clear the stokes vector (only relevant if polarization support is enabled)
         pp->setUnpolarized();

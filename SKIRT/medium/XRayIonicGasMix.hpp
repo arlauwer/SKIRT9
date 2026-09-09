@@ -527,6 +527,7 @@ private:
     };
 
     int _numIons;  // number of ions
+    int _numElec;  // number of ions with electron scattering (either all or none)
     int _numFluo;  // number of fluorescence (+RR) transitions
     int _numLine;  // number of resonant scattering transitions
 
