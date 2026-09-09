@@ -6,14 +6,52 @@
 #include "VoigtProfile.hpp"
 #include "FatalError.hpp"
 #include "Random.hpp"
-#include "Faddeeva.hh"
+#include <complex>
 
 ////////////////////////////////////////////////////////////////////
 
 double VoigtProfile::value(double a, double x)
 {
-    std::complex<double> z(x, a);
-    return std::real(Faddeeva::w(z, 0.001));
+    // Humlíček (1982) w(z = x + i*a) approximation, valid for all x, y>=0
+    std::complex<double> t(a, -x);
+
+    double s = std::fabs(x) + a;
+
+    if (s >= 15.0)
+    {
+        // Region I
+        return std::real(t * 0.5641896 / (0.5 + t * t));
+    }
+    else if (s >= 5.5)
+    {
+        // Region II
+        std::complex<double> u = t * t;
+        return std::real(t * (1.410474 + u * 0.5641896) / (0.75 + u * (3.0 + u)));
+    }
+    else if (a >= 0.195 * std::fabs(x) - 0.176)
+    {
+        // Region III
+        return std::real((16.4955 + t * (20.20933 + t * (11.96482 + t * (3.778987 + t * 0.5642236))))
+                         / (16.4955 + t * (38.82363 + t * (39.27121 + t * (21.69274 + t * (6.699398 + t))))));
+    }
+    else
+    {
+        // Region IV
+        std::complex<double> u = t * t;
+        return std::real(
+            std::exp(u)
+            - t
+                  * (36183.31
+                     - u
+                           * (3321.9905
+                              - u * (1540.787 - u * (219.0313 - u * (35.76683 - u * (1.320522 - u * 0.56419))))))
+                  / (32066.6
+                     - u
+                           * (24322.84
+                              - u
+                                    * (9022.228
+                                       - u * (2186.181 - u * (364.2191 - u * (61.57037 - u * (1.841439 - u))))))));
+    }
 }
 
 ////////////////////////////////////////////////////////////////////

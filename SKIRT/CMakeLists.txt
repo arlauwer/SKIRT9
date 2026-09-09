@@ -8,7 +8,6 @@
 # ------------------------------------------------------------------
 
 # add all relevant subdirectories; each subdirectory defines a single target
-add_subdirectory(faddeeva)
 add_subdirectory(field)
 add_subdirectory(fitsio)
 add_subdirectory(geometry)
