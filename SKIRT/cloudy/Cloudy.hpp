@@ -3,95 +3,85 @@
 
 #include "Array.hpp"
 #include "Basics.hpp"
+#include "CloudyConfig.hpp"
+#include <mutex>
 
-struct CloudyConfig
+////////////////////////////////////////////////////////////////////
+
+// Stores the mapping from the Cloudy columns onto the SKIRT ion indices.
+class CloudySpeciesHeader
 {
-    // --- Radiation field ---
-    size_t numBins;
-    Array radEdges;  // rydberg
-    Array radWidth;  // meter
-    double radMin;   // W/m2/m
+public:
+    /** Returns, for each column of the .species file, the SKIRT ion index, or -1 if the
+        column should be ignored. */
+    const vector<int>& columnsFor(const vector<string>& headerCols);
 
-    // --- Optical properties ---
-    int numLambdaBins{-1};
-    Array lambdaBorderv;  // meter in ascending order
-    Array lambdaWidthv;   // meter
-    Array lambdav;        // meter
-
-    // --- Lines ---
-    int numLines{-1};
-    Array lineEmisCenterv;  // m
-    Array lineMassv;        // amu
-
-    // --- Ions ---
-    constexpr static int numIons = 495;  // might have variable number of ions later
-    constexpr static int numAtoms = 30;
-
-    // --- Cloudy ---
-    string cloudyExecPath;
-    size_t numDims;  // total number of parameters
+private:
+    std::mutex _mutex;
+    vector<string> _header;
+    vector<int> _ionIndices;
 };
 
+////////////////////////////////////////////////////////////////////
+
+/** A single Cloudy run in its own directory. Cheap to construct, not thread safe;
+    create one per query, in a directory no other thread is using. */
 class Cloudy
 {
 public:
-    // using SKIRT (SI) units
+    /** Run parameters, in SKIRT (SI) units. */
     struct Input
     {
-        double hden{0};
-        double metal{0};
-        Array radv;
+        double hden{0.};  // 1/m3
+        double metal{0.};
+        Array radv;  // W/m2/m, one value per radiation bin
     };
 
-    // using SKIRT (SI) units
+    /** Run results, in SKIRT (SI) units. */
     struct Output
     {
-        void resize(int numBins, int numLines)
-        {
-            abunv.resize(CloudyConfig::numIons, 0.);
-            opacv.resize(numBins, 0.);
-            emisv.resize(numBins, 0.);
-            linev.resize(numLines, 0.);
-        }
+        double temp{0.};  // K
+        Array abunv;      // relative to hden
+        Array opacv;      // 1/m,     ascending wavelength
+        Array emisv;      // W/m3/m,  ascending wavelength
+        Array linev;      // W
 
-        double temp{0.};
-        Array abunv;  // (1/hden)
-        Array opacv;  // (1/m)    ascending wavelength
-        Array emisv;  // (W/m3/m) ascending wavelength
-        Array linev;  // (W/m3)   WIP
+        void resize(const CloudyConfig& config);
     };
 
-    Cloudy(string basePath, const string& inputTemplate, const CloudyConfig& config);
+    Cloudy(const string& runPath, const string& inputTemplate, const CloudyConfig& config,
+           CloudySpeciesHeader& species);
 
-    void createInput(const Input& input) const;
-
-    bool execute();
-
-    void readOutput(const Input& input, Output& output) const;
+    /** Writes the input files, invokes Cloudy and parses the results into \em output,
+        which must already have been resized. Throws on any failure. */
+    void run(const Input& input, Output& output) const;
 
 private:
+    void createInput(const Input& input) const;
     void createSim(const Input& input) const;
-
     void createSed(const Input& input) const;
 
+    void execute() const;
+
+    void readOutput(const Input& input, Output& output) const;
     void readTemp(Output& output) const;
-
     void readAbun(const Input& input, Output& output) const;
-
-    void binSegments(const string& fileName, Array& binnedSpectrum, size_t col) const;
-
     void readOpac(Output& output) const;
-
     void readEmis(Output& output) const;
-
     void readLines(Output& output) const;
 
-private:
-    string localPath(const string& filename) const;
+    /** Reads one column of a per-wavelength Cloudy file into \em target, reversing the
+        row order (Cloudy writes descending wavelength, SKIRT wants ascending). */
+    void readSpectrum(const string& fileName, size_t col, Array& target) const;
 
-    string _basePath;
-    const string& _inputTemplate;
-    const CloudyConfig& _cloudyConfig;
+    string localPath(const string& fileName) const;
+
+    string _runPath;
+    const string& _template;
+    const CloudyConfig& _config;
+    CloudySpeciesHeader& _species;
 };
+
+////////////////////////////////////////////////////////////////////
 
 #endif

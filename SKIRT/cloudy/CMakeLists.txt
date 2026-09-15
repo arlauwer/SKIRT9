@@ -17,9 +17,13 @@ file(GLOB HEADERS "*.hpp")
 # create the library target
 add_library(${TARGET} STATIC ${SOURCES} ${HEADERS})
 
+# add SMILE library dependencies
+target_link_libraries(${TARGET} schema fundamentals)
+include_directories(../../SMILE/schema ../../SMILE/fundamentals)
+
 # add required dependencies
-target_link_libraries(${TARGET} fundamentals hnsw utils)
-include_directories(../../SMILE/fundamentals ../hnsw ../utils)
+target_link_libraries(${TARGET} fundamentals hnsw utils tools wavelength)
+include_directories(../../SMILE/fundamentals ../hnsw ../utils ../tools ../wavelength)
 
 # adjust C++ compiler flags to our needs
 include("../../SMILE/build/CompilerFlags.cmake")

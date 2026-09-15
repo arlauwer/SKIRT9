@@ -8,12 +8,11 @@
 
 #include "CloudyWrapper.hpp"
 #include "DisjointWavelengthGrid.hpp"
+#include "ElectronScatteringHelper.hpp"
 #include "EmittingGasMix.hpp"
 #include "ItemInfo.hpp"
-#include "Log.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
-#include "TextInFile.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -41,6 +40,8 @@ class XRayCloudyGasMix : public EmittingGasMix
         PROPERTY_STRING(cloudyExecPath, "path to cloudy executable")
         ATTRIBUTE_DEFAULT_VALUE(cloudyExecPath, "/usr/local/bin/cloudy")
 
+        PROPERTY_STRING(tableDirectory, "path to the cloudy table directory")
+
         PROPERTY_DOUBLE(radMin, "minimum value of radiation field (W/m2/m)")
         ATTRIBUTE_DEFAULT_VALUE(radMin, "1e-5")
         ATTRIBUTE_MIN_VALUE(radMin, "]0")
@@ -53,6 +54,11 @@ public:
     void setupSelfBefore() override;
 
     ~XRayCloudyGasMix();
+
+    //======== Private support functions =======
+
+private:
+    int indexForLambda(double lambda) const;
 
     //============= Capabilities =============
 
@@ -131,31 +137,33 @@ public:
     field and returns the (spatially constant) temperature configured for this material mix. */
     double indicativeTemperature(const MaterialState* state, const Array& Jv) const override;
 
-    //======== Helper Functions =======
+    //======== Helper Classes =======
 
 private:
-    void setupCloudyConfig();
+    struct IonParam
+    {
+        int Z;  // atomic number
+        int N;  // number of electrons
+    };
+
+    //======== Helper Functions =======
 
     void updateSpecificState(MaterialState* state, const Cloudy::Output& output) const;
 
     //======================== Data Members ========================
 
-public:
-    // base class for bound-electron scattering helpers (public because we derive from it in anonymous namespace)
-    class ScatteringHelper;
+    int _numElec;  // number of ions with electron scattering (either all or none)
 
-private:
-    Log* _log{nullptr};
-
-    // bound-electron scattering helpers depending on the configured implementation
-    ScatteringHelper* _com{nullptr};  // Compton scattering helper
+    vector<IonParam> _ionParamv;
+    Array _lineMassv;
+    Array _lineCenterv;
 
     // MediumState data
     int _indexAbundances;       // numIons
     int _indexThermalVelocity;  // numAtoms
     int _indexKappaAbs;         // numLambda
     int _indexKappaSca;         // numLambda
-    int _indexKappaScaCum;      // numLambda x 2*numIons+1 (+1 for cumulative)
+    int _indexKappaScaCum;      // numLambda x _numElec+1 (+1 for cumulative)
     int _indexEmissivity;       // numLambda + 2 (+2 for 'outside' bins)
     int _indexLineEmissivity;   // numLines
 
@@ -163,6 +171,9 @@ private:
     CloudyWrapper _cloudyWrapper;
 
     DisjointWavelengthGrid* _opticalWavelengthGrid;
+
+    // compton-electron scattering helpers depending on the configured implementation
+    ScatteringHelper* _com{nullptr};
 };
 
 #endif

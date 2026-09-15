@@ -326,12 +326,23 @@ void XRayIonicGasMix::setupSelfBefore()
     // create scattering helpers depending on the user-configured implementation type
     switch (electronScattering())
     {
-        case ElectronScattering::None: _com = new NoScatteringHelper(this); break;
-        case ElectronScattering::Free: _com = new FreeComptonHelper(this); break;
-        case ElectronScattering::FreeWithPolarization: _com = new FreeComptonWithPolarizationHelper(this); break;
-        case ElectronScattering::FreeBound: _com = new FreeBoundComptonHelper(this); break;
+        case ElectronScattering::None:
+            _com = new NoScatteringHelper(this);
+            _numElec = 0;
+            break;
+        case ElectronScattering::Free:
+            _com = new FreeComptonHelper(this);
+            _numElec = _numIons;  // SHOULD BE NUM PRESENT ATOMS
+            break;
+        case ElectronScattering::FreeWithPolarization:
+            _com = new FreeComptonWithPolarizationHelper(this);
+            _numElec = _numIons;  // SHOULD BE NUM PRESENT ATOMS
+            break;
+        case ElectronScattering::FreeBound:
+            _com = new FreeBoundComptonHelper(this);
+            _numElec = _numIons;
+            break;
     }
-    _numElec = electronScattering() == ElectronScattering::None ? 0 : _numIons;
 
     if (resonantScattering())
     {
