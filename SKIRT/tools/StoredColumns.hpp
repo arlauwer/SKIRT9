@@ -6,7 +6,7 @@
 #ifndef STOREDCOLUMNS_HPP
 #define STOREDCOLUMNS_HPP
 
-#include "Basics.hpp"
+#include "Array.hpp"
 
 ////////////////////////////////////////////////////////////////////
 

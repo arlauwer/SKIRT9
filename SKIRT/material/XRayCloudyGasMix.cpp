@@ -5,7 +5,6 @@
 
 #include "XRayCloudyGasMix.hpp"
 #include "AtomUtils.hpp"
-#include "Atoms.hpp"
 #include "Cloudy.hpp"
 #include "CloudyWrapper.hpp"
 #include "ComptonPhaseFunction.hpp"
@@ -13,7 +12,7 @@
 #include "Constants.hpp"
 #include "DipolePhaseFunction.hpp"
 #include "DisjointWavelengthGrid.hpp"
-#include "ElectronScatteringHelper.hpp"
+#include "FatalError.hpp"
 #include "ListBorderWavelengthGrid.hpp"
 #include "MaterialMix.hpp"
 #include "MaterialState.hpp"
@@ -36,10 +35,10 @@ namespace
         return sqrt(Constants::k() / Constants::amu() * T / amu);
     }
 
-    // convert photon energy in Ryd to and from wavelength in m (same conversion in both directions)
+    // convert photon energy in Ry to and from wavelength in m (same conversion in both directions)
     template<typename T> constexpr T wavelengthToFromRydberg(T x)
     {
-        constexpr double front = Constants::iRyd();
+        constexpr double front = Constants::iRy();
         return front / x;
     }
 }
@@ -63,6 +62,7 @@ void XRayCloudyGasMix::setupSelfBefore()
     }
 
     // create scattering helpers depending on the user-configured implementation type
+    using namespace ElectronScatteringHelper;
     switch (electronScattering())
     {
         case ElectronScattering::None:
@@ -85,7 +85,7 @@ void XRayCloudyGasMix::setupSelfBefore()
 
     // load optical wavelength grid
     TextInFile optGrid(this, "XRayCloudyGasMix_wav.dat", "Optical wavelength grid", true);
-    optGrid.addColumn("Cloudy wavelength grid", "wavelength", "Ryd");
+    optGrid.addColumn("Cloudy wavelength grid", "wavelength", "Ry");
     Array borders = optGrid.readAllColumns()[0];
 
     // load emission lines
@@ -206,7 +206,7 @@ vector<StateVariable> XRayCloudyGasMix::specificStateVariableInfo() const
     for (int i = 0; i < numIons; i++)
     {
         const auto& ion = _ionParamv[i];
-        string name = Atoms::ionName(ion.Z, ion.N);
+        string name = AtomUtils::ionName(ion.Z, ion.N);
 
         result.push_back(StateVariable::custom(index++, name + " abundance", "dimensionless"));
     }
@@ -469,7 +469,7 @@ void XRayCloudyGasMix::updateSpecificState(MaterialState* state, const Cloudy::O
     for (int a = 0; a < numAtoms; a++)
     {
         int Z = a + 1;
-        double v = vtherm(temp, Atoms::mass(Z));
+        double v = vtherm(temp, AtomUtils::mass(Z));
         state->setVTherm(a, v);
     }
 

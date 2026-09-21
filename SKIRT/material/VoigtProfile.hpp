@@ -6,6 +6,7 @@
 #ifndef VOIGTPROFILE_HPP
 #define VOIGTPROFILE_HPP
 
+#include "Basics.hpp"
 class Random;
 
 ////////////////////////////////////////////////////////////////////

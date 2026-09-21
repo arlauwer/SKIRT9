@@ -3,8 +3,8 @@
 ////       © Astronomical Observatory, Ghent University         ////
 ///////////////////////////////////////////////////////////////// */
 
-#ifndef XRAYIONICGASMIX_HPP
-#define XRAYIONICGASMIX_HPP
+#ifndef XRAYCLOUDYGASMIX_HPP
+#define XRAYCLOUDYGASMIX_HPP
 
 #include "CloudyWrapper.hpp"
 #include "DisjointWavelengthGrid.hpp"
@@ -173,7 +173,7 @@ private:
     DisjointWavelengthGrid* _opticalWavelengthGrid;
 
     // compton-electron scattering helpers depending on the configured implementation
-    ScatteringHelper* _com{nullptr};
+    ElectronScatteringHelper::Helper* _com{nullptr};
 };
 
 #endif

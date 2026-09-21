@@ -23,7 +23,7 @@ SkirtUnitDef::SkirtUnitDef()
     constexpr double year = Constants::year();
     constexpr double arcsec = M_PI / (180. * 3600.);
     constexpr double arcsec2 = arcsec * arcsec;
-    constexpr double iRyd = Constants::iRyd();
+    constexpr double iRy = Constants::iRy();
 
     // *** add units for each physical quantity
 
@@ -69,7 +69,7 @@ SkirtUnitDef::SkirtUnitDef()
     addUnit("wavelength", "keV", 1e-3 * hc / Qel, -1.);
     addUnit("wavelength", "MeV", 1e-6 * hc / Qel, -1.);
     addUnit("wavelength", "GeV", 1e-9 * hc / Qel, -1.);
-    addUnit("wavelength", "Ryd", iRyd, -1.);
+    addUnit("wavelength", "Ry", iRy, -1.);
 
     // wavelength-style wavelength
     addUnit("wavelengthwavelength", "m", 1.);

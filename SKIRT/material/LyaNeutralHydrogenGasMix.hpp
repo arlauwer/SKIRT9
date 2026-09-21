@@ -12,9 +12,9 @@
 
 ////////////////////////////////////////////////////////////////////
 
-/** The LyaNeutralHydrogenGasMix class describes the material properties related to Lyman-alpha
-    line transfer for a population of neutral hydrogen atoms, including support for polarization by
-    scattering.
+/** The LyaNeutralHydrogenGasMix class describes the material properties related to
+    Lyman-alpha line transfer for a population of neutral hydrogen atoms, including support for
+    polarization by scattering.
 
     The spatial distributions for both the mass density and the temperature of the neutral hydrogen
     gas must be defined by the input model and are considered to be constant during the simulation.
@@ -100,11 +100,6 @@ public:
                                  const Array& params) const override;
 
     //======== Low-level material properties =======
-
-private:
-    /** This private function calculates the cross section per hydrogen atom for the given
-        wavelength and temperature. */
-    double section(double lambda, double T) const;
 
 public:
     /** This function returns the mass of neutral hydrogen atom. */

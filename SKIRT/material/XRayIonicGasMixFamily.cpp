@@ -7,7 +7,6 @@
 #include "XRayIonicGasMixFamily.hpp"
 #include "FatalError.hpp"
 #include "StringUtils.hpp"
-#include "XRayIonicGasMix.hpp"
 
 ////////////////////////////////////////////////////////////////////
 

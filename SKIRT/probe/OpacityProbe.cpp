@@ -92,21 +92,18 @@ void OpacityProbe::probe()
 
                 if (ms->hasDust())
                 {
-                    MatType type = MatType::Dust;
                     bridge.writeQuantity("dust_k", "dust_tau", "opacity", "dimensionless", "opacity", "optical depth",
                                          axis, units->uwavelength(), addColumnDefinitions,
                                          [valueInCell](int m) { return valueInCell(m, MatType::Dust); });
                 }
                 if (ms->hasElectrons())
                 {
-                    MatType type = MatType::Electrons;
                     bridge.writeQuantity("elec_k", "elec_tau", "opacity", "dimensionless", "opacity", "optical depth",
                                          axis, units->uwavelength(), addColumnDefinitions,
                                          [valueInCell](int m) { return valueInCell(m, MatType::Electrons); });
                 }
                 if (ms->hasGas())
                 {
-                    MatType type = MatType::Gas;
                     bridge.writeQuantity("gas_k", "gas_tau", "opacity", "dimensionless", "opacity", "optical depth",
                                          axis, units->uwavelength(), addColumnDefinitions,
                                          [valueInCell](int m) { return valueInCell(m, MatType::Gas); });

@@ -14,11 +14,17 @@
 
 namespace
 {
-    static const std::map<string, short> atomMap = {
+    static const std::map<string, int> atomMap = {
         {"H", 1},   {"He", 2},  {"Li", 3},  {"Be", 4},  {"B", 5},   {"C", 6},   {"N", 7},  {"O", 8},
         {"F", 9},   {"Ne", 10}, {"Na", 11}, {"Mg", 12}, {"Al", 13}, {"Si", 14}, {"P", 15}, {"S", 16},
         {"Cl", 17}, {"Ar", 18}, {"K", 19},  {"Ca", 20}, {"Sc", 21}, {"Ti", 22}, {"V", 23}, {"Cr", 24},
         {"Mn", 25}, {"Fe", 26}, {"Co", 27}, {"Ni", 28}, {"Cu", 29}, {"Zn", 30}};
+
+    static const std::map<int, string> reverseAtomMap = {
+        {1, "H"},   {2, "He"},  {3, "Li"},  {4, "Be"},  {5, "B"},   {6, "C"},   {7, "N"},  {8, "O"},
+        {9, "F"},   {10, "Ne"}, {11, "Na"}, {12, "Mg"}, {13, "Al"}, {14, "Si"}, {15, "P"}, {16, "S"},
+        {17, "Cl"}, {18, "Ar"}, {19, "K"},  {20, "Ca"}, {21, "Sc"}, {22, "Ti"}, {23, "V"}, {24, "Cr"},
+        {25, "Mn"}, {26, "Fe"}, {27, "Co"}, {28, "Ni"}, {29, "Cu"}, {30, "Zn"}};
 
     static const vector<double> masses = {1.0079,  4.0026, 6.941,   9.01218, 10.81,   12.011,  14.0067, 15.9994,
                                           18.9984, 20.179, 22.9898, 24.305,  26.9815, 28.0855, 30.9738, 32.06,
@@ -28,14 +34,14 @@ namespace
 
 ////////////////////////////////////////////////////////////////////
 
-short AtomUtils::atomToZ(string element)
+int AtomUtils::atomToZ(string element)
 {
     return atomMap.at(element);
 }
 
 ////////////////////////////////////////////////////////////////////
 
-double AtomUtils::mass(short Z)
+double AtomUtils::mass(int Z)
 {
     return masses[Z - 1] * Constants::amu();
 }
@@ -53,7 +59,14 @@ int AtomUtils::ionIndex(int Z, int N)
 
 ////////////////////////////////////////////////////////////////////
 
-std::pair<short, short> AtomUtils::parseIon(string ion)
+string AtomUtils::ionName(int Z, int N)
+{
+    return reverseAtomMap.at(Z - N) + "+" + std::to_string(N);
+}
+
+////////////////////////////////////////////////////////////////////
+
+std::pair<int, int> AtomUtils::parseIon(string ion)
 {
     // read ions
     ion = StringUtils::squeeze(ion);

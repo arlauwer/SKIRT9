@@ -80,7 +80,7 @@ namespace Constants
 
     /** This function returns the wavelength of the Rydberg energy or the reciprocal of the Rydberg
         constant \f$R_{\text{H}}\f$. */
-    constexpr double iRyd()
+    constexpr double iRy()
     {
         return 1. / 10973731.568157;
     }

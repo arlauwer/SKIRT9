@@ -34,18 +34,6 @@ namespace
 
 ////////////////////////////////////////////////////////////////////
 
-namespace
-{
-    // the combined Lya1 and Lya2 for hydrogen
-    constexpr double lyaA = Constants::EinsteinALya();
-    constexpr double lya = Constants::lambdaLya();
-    constexpr double g = 3.;
-    constexpr double kB = Constants::k();
-    constexpr double mp = Constants::Mproton();
-}
-
-////////////////////////////////////////////////////////////////////
-
 void LyaNeutralHydrogenGasMix::setupSelfBefore()
 {
     MaterialMix::setupSelfBefore();
@@ -116,15 +104,6 @@ void LyaNeutralHydrogenGasMix::initializeSpecificState(MaterialState* state, dou
 double LyaNeutralHydrogenGasMix::mass() const
 {
     return Constants::Mproton();
-}
-
-////////////////////////////////////////////////////////////////////
-
-double LyaNeutralHydrogenGasMix::section(double lambda, double T) const
-{
-    double vth = sqrt(2. * kB / mp * T);
-    double a = lyaA * lya / 4. / M_PI / vth;
-    return LyUtils::section(lambda, lya, vth, lyaA, a, g);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -200,7 +179,7 @@ bool LyaNeutralHydrogenGasMix::peeloffScattering(double& I, double& Q, double& U
                                                  Direction bfkobs, Direction bfky, const MaterialState* state,
                                                  const PhotonPacket* pp) const
 {
-    setScatteringInfoIfNeeded(const_cast<PhotonPacket*>(pp), state, lambda);
+    // draw a random atom velocity & phase function, unless a previous peel-off stored this already
     auto scatinfo = const_cast<PhotonPacket*>(pp)->getScatteringInfo();
     setScatteringInfoIfNeeded(scatinfo, lambda, state, pp->direction());
 

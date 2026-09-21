@@ -22,8 +22,8 @@ target_link_libraries(${TARGET} schema fundamentals)
 include_directories(../../SMILE/schema ../../SMILE/fundamentals)
 
 # add required dependencies
-target_link_libraries(${TARGET} fundamentals hnsw utils tools wavelength)
-include_directories(../../SMILE/fundamentals ../hnsw ../utils ../tools ../wavelength)
+target_link_libraries(${TARGET} fundamentals hnsw utils tools wavelength material)
+include_directories(../../SMILE/fundamentals ../hnsw ../utils ../tools ../wavelength ../material)
 
 # adjust C++ compiler flags to our needs
 include("../../SMILE/build/CompilerFlags.cmake")
