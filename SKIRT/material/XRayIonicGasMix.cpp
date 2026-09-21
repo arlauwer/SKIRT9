@@ -8,7 +8,10 @@
 #include "Configuration.hpp"
 #include "Constants.hpp"
 #include "DipolePhaseFunction.hpp"
+#include "ElectronScatteringHelper.hpp"
 #include "FatalError.hpp"
+#include "FilePaths.hpp"
+#include "Log.hpp"
 #include "LyUtils.hpp"
 #include "MaterialState.hpp"
 #include "NR.hpp"
@@ -18,7 +21,6 @@
 #include "StoredTable.hpp"
 #include "StringUtils.hpp"
 #include "TextInFile.hpp"
-#include <algorithm>
 #include <cmath>
 #include <map>
 #include <set>
@@ -31,19 +33,9 @@ namespace
 {
     // ---- hardcoded configuration constants ----
 
-    constexpr int numAtoms = 30;         // maximum atomic number used in this class
-    constexpr int resourceN[] = {1, 2};  // the electron numbers for the available resources
+    constexpr int numAtoms = 30;  // maximum atomic number used in this class
 
     // ---- common helper resources----
-
-    // return true if N is in the resourceN list, indicating that the recombination resource for N is present
-    constexpr bool hasResource(int N)
-    {
-        // manual implementation as std::find() is not constexpr in C++14
-        for (int r : resourceN)
-            if (r == N) return true;
-        return false;
-    }
 
     // convert photon energy in eV to and from wavelength in m (same conversion in both directions)
     constexpr double wavelengthToFromEnergy(double x)
@@ -62,7 +54,7 @@ namespace
     constexpr Range nonZeroRange(wavelengthToFromEnergy(500e3), wavelengthToFromEnergy(4.3));
 
     // number of wavelengths per dex in high-resolution grid
-    constexpr size_t numWavelengthsPerDex = 1000;
+    constexpr size_t numWavelengthsPerDex = 2500;
 
     // Return the dipole fraction of the angular redistribution matrix for an
     // electric-dipole transition J_l -> J_u.
@@ -80,7 +72,7 @@ namespace
         double E1 = 0.0;
         double E2 = 0.0;
 
-        if (deltaJ > 0)  // 1
+        if (deltaJ == 1)  // 1
         {
             E1 = 0.1 * 3.0 * j * (6.0 * j + 7.0) / ((j + 1.0) * (2.0 * j + 1.0));
             E2 = 0.1 * (2.0 * j + 5.0) * (j + 2.0) / ((j + 1.0) * (2.0 * j + 1.0));
@@ -90,7 +82,7 @@ namespace
             E1 = 0.1 * 3.0 * (2.0 * j * j + 2.0 * j + 1.0) / (j * (j + 1.0));
             E2 = 0.1 * (2.0 * j - 1.0) * (2.0 * j + 3.0) / (j * (j + 1.0));
         }
-        else if (deltaJ < 0)  // -1
+        else if (deltaJ == -1)  // -1
         {
             E1 = 0.1 * 3.0 * (j + 1.0) * (6.0 * j - 1.0) / (j * (2.0 * j + 1.0));
             E2 = 0.1 * (2.0 * j - 3.0) * (j - 1.0) / (j * (2.0 * j + 1.0));
@@ -130,8 +122,8 @@ namespace
         double yw;                           // fit parameter (1)
         static constexpr double Emax = 5e5;  // maximum energy for validity of the formula (eV)
 
-        double Es;
-        double sigmamax;
+        double Es{0.};        // thermal energy dispersion at the threshold energy (eV); set after construction
+        double sigmamax{0.};  // cross section at the threshold energy plus 2*Es (m2); set after construction
 
         // return photo-absorption cross section in m2 for given energy in eV and cross section parameters,
         // without taking into account thermal dispersion
@@ -216,9 +208,10 @@ namespace
 
     // This function loads data from a resource file, only keeping the required data for the present ions.
     // The data is loaded into a vector of structs of type S that can be constructed from an array with C elements,
-    // i.e. C columns. The first two columns of the data must always be the ion parameters Z and N.
-    // The function uses an set of unique ion hashes to quickly check if an ion is present.
-    // These hashes must be calculated from the AtomUtils::ionIndex() function.
+    // i.e. C columns.
+    // The first two columns of the data must always be the ion parameters Z and N.
+    // The function uses an set of unique ion indices to quickly check if an ion is present.
+    // These indices must be calculated from the AtomUtils::ionIndex() function.
     template<class S, int C>
     vector<S> loadPresent(SimulationItem* item, string filename, string description,
                           const std::unordered_set<int>& ionSet)
@@ -227,17 +220,17 @@ namespace
         TextInFile infile(item, filename, description, true);
         infile.addColumn("Z");
         infile.addColumn("N");
-        for (int i = 2; i != C; ++i) infile.addColumn(string());
+        for (int i = 2; i < C; i++) infile.addColumn(string());
 
         Array row;
         while (infile.readRow(row))
         {
             int Z = row[0];
             int N = row[1];
-            int hash = AtomUtils::ionIndex(Z, N);
+            int index = AtomUtils::ionIndex(Z, N);
 
             // only keep ions that are present
-            if (ionSet.count(hash)) result.emplace_back(row);
+            if (ionSet.count(index)) result.emplace_back(row);
         }
         return result;
     }
@@ -270,17 +263,6 @@ XRayIonicGasMix::XRayIonicGasMix(SimulationItem* parent, string ions, vector<dou
 
 void XRayIonicGasMix::setupSelfBefore()
 {
-    /*
-	   The setup performs all prior calculations that are needed during the simulation.
-	   This is organized in the following steps:
-	   1. Parse user properties
-	   2. Load the resources for all present ions
-	   3. Preprocess resources by adding more fluorescent data that is implied from the resonant data
-	   4. Postprocess resources by adding data that is not present in the resources
-	   5. Calculate the persistent data that is needed during the simulation.
-	   6. Calculate and store the cross section for each wavelength 
-	*/
-
     MaterialMix::setupSelfBefore();
 
     auto config = find<Configuration>();
@@ -318,31 +300,16 @@ void XRayIonicGasMix::setupSelfBefore()
         ionSet.insert(AtomUtils::ionIndex(ion.Z, ion.N));
     }
 
-    // check if any ions that allow lyman scattering are present
-    auto it = std::find_if(usedN.begin(), usedN.end(), hasResource);
-    if (resonantScattering() && it == usedN.end())
-        throw FATALERROR("Resonant scattering requires ions that allow resonant scattering");
-
     // create scattering helpers depending on the user-configured implementation type
+    using namespace ElectronScatteringHelper;
     switch (electronScattering())
     {
-        case ElectronScattering::None:
-            _com = new NoScatteringHelper(this);
-            _numElec = 0;
-            break;
-        case ElectronScattering::Free:
-            _com = new FreeComptonHelper(this);
-            _numElec = _numIons;  // SHOULD BE NUM PRESENT ATOMS
-            break;
-        case ElectronScattering::FreeWithPolarization:
-            _com = new FreeComptonWithPolarizationHelper(this);
-            _numElec = _numIons;  // SHOULD BE NUM PRESENT ATOMS
-            break;
-        case ElectronScattering::FreeBound:
-            _com = new FreeBoundComptonHelper(this);
-            _numElec = _numIons;
-            break;
+        case ElectronScattering::None: _com = new NoScatteringHelper(this); break;
+        case ElectronScattering::Free: _com = new FreeComptonHelper(this); break;
+        case ElectronScattering::FreeWithPolarization: _com = new FreeComptonWithPolarizationHelper(this); break;
+        case ElectronScattering::FreeBound: _com = new FreeBoundComptonHelper(this); break;
     }
+    _numElec = electronScattering() == ElectronScattering::None ? 0 : _numIons;
 
     if (resonantScattering())
     {
@@ -351,6 +318,8 @@ void XRayIonicGasMix::setupSelfBefore()
     }
 
     // ------------ load required resources (present ions only) ------------
+
+    // These resources contain all the data needed during the setup, but are not needed afterwards.
 
     // photo-absorption data
     auto paResources = loadPresent<PhotoAbsorbResource, 10>(this, "Ionic_PA.txt", "photo-absorption data", ionSet);
@@ -371,12 +340,12 @@ void XRayIonicGasMix::setupSelfBefore()
     std::map<int, StoredTable<3>> recoResources;
     for (int N : usedN)
     {
-        if (!hasResource(N)) continue;
-
-        // Can't copy StoredTable so must use C++14 emplace
-        recoResources.emplace(std::piecewise_construct, std::forward_as_tuple(N),
-                              std::forward_as_tuple(this, branchRrFilename(N), "Z(1),Index(1),T(K)", "Y(1)"));
+        string rrFilename = branchRrFilename(N);
+        if (FilePaths::hasResource(rrFilename))
+            recoResources.emplace(N, StoredTable<3>(this, rrFilename, "Z(1),Index(1),T(K)", "Y(1)"));
     }
+
+    if (recoResources.size() == 0) find<Log>()->warning("No recombination resources found");
 
     // ------------ preprocess resources ------------
 
@@ -389,7 +358,11 @@ void XRayIonicGasMix::setupSelfBefore()
         double N = lineRes.N;
         double lineIndex = lineRes.lineIndex;
         double E = wavelengthToFromEnergy(lineRes.lam);
-        double omega = recoResources[lineRes.N](Z, lineIndex, temperature());
+
+        auto recoResource = recoResources.find(lineRes.N);
+        if (recoResource == recoResources.end())
+            throw FATALERROR("No recombination resource loaded for N=" + std::to_string(lineRes.N));
+        double omega = recoResource->second(Z, lineIndex, temperature());
 
         if (omega == 0) continue;
 
@@ -493,15 +466,14 @@ void XRayIonicGasMix::setupSelfBefore()
 
     // ------------ calculate/store persistent data ------------
 
-    // The persistent data is the data that is needed beyond the setup (scattering)
-    // No changes should be made to the usedFlr, usedLines, or usedBranchRs arrays after this point.
-    // The usedFlr and usedLines arrays need to remain consistent with the persistent parameter arrays.
+    // The persistent data is the data that is needed beyond the setup (scattering).
+    // No changes should be made to the resources from this point on.
 
     // Fluorescence
-    // Store the Z, wavelength, and width of each fluorescence transition.
-    // These are needed when scattering photons after a photo-absorption event.
+    // Store the vtherm, wavelength, and width of each fluorescence transition.
+    // These are needed during scattering after a photo-absorption event.
     _fluorescenceParamv.resize(_numFluo);
-    for (int f = 0; f != _numFluo; ++f)
+    for (int f = 0; f != _numFluo; f++)
     {
         const auto& fluoRes = fluoResources[f];
         auto& fluo = _fluorescenceParamv[f];
@@ -512,14 +484,14 @@ void XRayIonicGasMix::setupSelfBefore()
     }
 
     // Resonant scattering
-    // Store the ion index, Z, line index, wavelength, Voigt parameter and the cumulative branching
-    // for each resonant transition. These are needed to sample atom velocities and to determine
-    // the branch to scatter to.
+    // Store the ion index, line index, vtherm, wavelength, Voigt parameter, dipole fraction, and the
+    // cumulative branching for each resonant transition. These are needed to sample atom velocities
+    // and to determine which branch to scatter to.
     if (resonantScattering())
     {
         _resonantParamv.resize(_numLine);
 
-        for (int r = 0; r != _numLine; ++r)
+        for (int r = 0; r != _numLine; r++)
         {
             const auto& lineRes = lineResources[r];
             auto& res = _resonantParamv[r];
@@ -569,7 +541,7 @@ void XRayIonicGasMix::setupSelfBefore()
     constexpr double numPerDex = numWavelengthsPerDex;  // converted to double to avoid casting
     int minLambdaSerial = std::floor(numPerDex * log10(range.min()));
     int maxLambdaSerial = std::ceil(numPerDex * log10(range.max()));
-    for (int k = minLambdaSerial; k <= maxLambdaSerial; ++k) lambdav.push_back(pow(10., k / numPerDex));
+    for (int k = minLambdaSerial; k <= maxLambdaSerial; k++) lambdav.push_back(pow(10., k / numPerDex));
 
     // add the wavelengths mentioned in the configuration of the simulation
     for (double lambda : config->simulationWavelengths())
@@ -607,7 +579,7 @@ void XRayIonicGasMix::setupSelfBefore()
     // the grid points are shifted to the left of the actual sample points to approximate rounding
     _lambdav.resize(numLambda);
     _lambdav[0] = lambdav[0];
-    for (int ell = 1; ell != numLambda; ++ell)
+    for (int ell = 1; ell != numLambda; ell++)
     {
         _lambdav[ell] = sqrt(lambdav[ell] * lambdav[ell - 1]);
     }
@@ -617,9 +589,9 @@ void XRayIonicGasMix::setupSelfBefore()
     // calculate the extinction cross section at every wavelength; to guarantee that the cross section is zero
     // for wavelengths outside our range, leave the values for the three outer wavelength points at zero
     _sigmaextv.resize(numLambda);
-    for (int ell = 1; ell < numLambda - 2; ++ell)
+    for (int ell = 1; ell < numLambda - 2; ell++)
     {
-        double lambda = _lambdav[ell];
+        double lambda = lambdav[ell];
         double sigma = 0.;
 
         // electron scattering
@@ -660,9 +632,9 @@ void XRayIonicGasMix::setupSelfBefore()
     Array sigmas(numInteractions);
 
     // calculate the above for every wavelength; as before, leave the values for the outer wavelength points at zero
-    for (int ell = 1; ell < numLambda - 2; ++ell)
+    for (int ell = 1; ell < numLambda - 2; ell++)
     {
-        double lambda = _lambdav[ell];
+        double lambda = lambdav[ell];
         double E = wavelengthToFromEnergy(lambda);
 
         // electron scattering
@@ -706,7 +678,7 @@ void XRayIonicGasMix::setupSelfBefore()
 XRayIonicGasMix::~XRayIonicGasMix()
 {
     delete _com;
-    if (resonantScattering()) delete _dpf;
+    delete _dpf;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -906,7 +878,7 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
 
                 const auto& lres = _resonantParamv[lr];
 
-                // // set parameters to those of the lower branching
+                // set parameters to those of the lower branching
                 vth = lres.vth;
                 a = lres.a;
                 center = lres.lambda;
@@ -918,10 +890,12 @@ void XRayIonicGasMix::setScatteringInfoIfNeeded(PhotonPacket* pp, const Material
             // determine whether this scattering event uses the dipole phase function
             scatinfo->dipole = random()->uniform() < dipoleFraction;
 
-            // sample an atom velocity from the Voigt profile
+            // sample an atom velocity from the Voigt profile (the atom-frame frequency it also
+            // returns is not needed here since the dipole choice above already used dipoleFraction)
             scatinfo->velocity =
                 LyUtils::sampleAtomVelocity(lambda, center, M_SQRT2 * vth, a, temperature(), state->numberDensity(),
-                                            pp->direction(), config(), random());
+                                            pp->direction(), config(), random())
+                    .first;
         }
     }
 }

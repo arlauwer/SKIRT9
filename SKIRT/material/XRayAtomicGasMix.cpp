@@ -8,6 +8,7 @@
 #include "Configuration.hpp"
 #include "Constants.hpp"
 #include "DipolePhaseFunction.hpp"
+#include "ElectronScatteringHelper.hpp"
 #include "FatalError.hpp"
 #include "MaterialState.hpp"
 #include "NR.hpp"
@@ -157,6 +158,7 @@ void XRayAtomicGasMix::setupSelfBefore()
 
     // create scattering helpers depending on the user-configured implementation type;
     // the respective helper constructors load the required bound-electron scattering resources
+    using namespace ElectronScatteringHelper;
     switch (scatterBoundElectrons())
     {
         case BoundElectrons::None:

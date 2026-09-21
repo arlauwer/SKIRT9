@@ -8,6 +8,7 @@
 
 #include "DipolePhaseFunction.hpp"
 #include "MaterialMix.hpp"
+#include "PhotonPacket.hpp"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -89,8 +90,8 @@ public:
         density, so this function returns a list containing these two items. */
     vector<StateVariable> specificStateVariableInfo() const override;
 
-    /** This function initializes the specific state variables requested by this material mix
-        through the specificStateVariableInfo() function except for the number density. For the
+    /** This function initializes the specific state variables requested by this material
+        mix through the specificStateVariableInfo() function except for the number density. For the
         Lyman-alpha material mix, the function initializes the temperature to the specified
         imported temperature, or if this is not available, to the user-configured default
         temperature for this material mix. The metallicity and custom parameter arguments are
@@ -142,12 +143,11 @@ public:
     double opacityExt(double lambda, const MaterialState* state, const PhotonPacket* pp) const override;
 
 private:
-    /** This private function draws an atom velocity and phase function and stores this information
-        in the photon packet's scattering information record, unless a previous peel-off stored
-        this already. The atom velocity sampling is delegated to the LyUtils::sampleAtomVelocity.
-        The phase function is chosen to be a dipole for all wing events (x > 0.2) and 1/3 of the
-        core events (x < 0.2). The remaining core events are isotropic. */
-    void setScatteringInfoIfNeeded(PhotonPacket* pp, const MaterialState* state, const double lambda) const;
+    /** This private function draws a random atom velocity and phase function and stores this
+        information in the photon packet's scattering information record, unless a previous
+        peel-off stored this already. */
+    void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda, const MaterialState* state,
+                                   Direction kin) const;
 
 public:
     /** This function calculates the contribution of the medium component associated with this
@@ -157,17 +157,19 @@ public:
         arguments, which are guaranteed to be initialized to zero by the caller, and the adjusted
         wavelength is stored in the \em lambda argument.
 
-        For the Lyman-alpha material mix, the function implements resonant scattering without or
-        with support for polarization depending on the user-configured \em includePolarization
-        property. */
+        The function first calls the private setScatteringInfoIfNeeded() function to establish a
+        random atom velocity and phase function for this event. For the Lyman-alpha material mix,
+        the function implements resonant scattering without or with support for polarization
+        depending on the user-configured \em includePolarization property. */
     bool peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;
 
     /** This function performs a scattering event on the specified photon packet in the spatial
         cell and medium component represented by the specified material state and the receiving
-        material mix. For the Lyman-alpha material mix, the function implements resonant scattering
-        without or with support for polarization depending on the user-configured \em
-        includePolarization property. */
+        material mix. It first calls the private setScatteringInfoIfNeeded() function to establish
+        a random atom velocity and phase function for this event. For the Lyman-alpha material mix,
+        the function implements resonant scattering without or with support for polarization
+        depending on the user-configured \em includePolarization property. */
     void performScattering(double lambda, const MaterialState* state, PhotonPacket* pp) const override;
 
     //======== Secondary emission =======

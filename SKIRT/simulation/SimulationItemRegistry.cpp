@@ -22,6 +22,7 @@
 #include "AxPowerLawRedistributeGeometryDecorator.hpp"
 #include "BandLuminosityNormalization.hpp"
 #include "BegemannPorousAluminaGrainComposition.hpp"
+#include "BinnedWavelengthDistribution.hpp"
 #include "BlackBodySED.hpp"
 #include "BlackBodySEDFamily.hpp"
 #include "BoxClipGeometryDecorator.hpp"
@@ -109,6 +110,7 @@
 #include "GeometricMedium.hpp"
 #include "GeometricSource.hpp"
 #include "GrainPopulation.hpp"
+#include "GridWavelengthDistribution.hpp"
 #include "HEALPixSkyInstrument.hpp"
 #include "HammerAitoffProjection.hpp"
 #include "HirashitaLogNormalGrainSizeDistribution.hpp"
@@ -306,6 +308,8 @@
 #include "WeingartnerDraineDustMix.hpp"
 #include "XRayAtomicGasMix.hpp"
 #include "XRayCloudyGasMix.hpp"
+#include "XRayIonicGasMix.hpp"
+#include "XRayIonicGasMixFamily.hpp"
 #include "ZubkoDustMix.hpp"
 #include "ZubkoGraphiteGrainSizeDistribution.hpp"
 #include "ZubkoPAHGrainSizeDistribution.hpp"
@@ -423,7 +427,9 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<TabulatedWavelengthDistribution>();
     ItemRegistry::add<FileWavelengthDistribution>();
     ItemRegistry::add<ListWavelengthDistribution>();
+    ItemRegistry::add<GridWavelengthDistribution>();
     ItemRegistry::add<DiscreteWavelengthDistribution>();
+    ItemRegistry::add<BinnedWavelengthDistribution>();
 
     // bands
     ItemRegistry::add<Band>();
@@ -616,6 +622,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<SpinFlipHydrogenGasMix>();
     ItemRegistry::add<XRayAtomicGasMix>();
     ItemRegistry::add<XRayCloudyGasMix>();
+    ItemRegistry::add<XRayIonicGasMix>();
     ItemRegistry::add<EmittingGasMix>();
     ItemRegistry::add<NonLTELineGasMix>();
     ItemRegistry::add<DiffuseIonizedGasMix>();
@@ -627,6 +634,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     // material mix families
     ItemRegistry::add<MaterialMixFamily>();
     ItemRegistry::add<SelectDustMixFamily>();
+    ItemRegistry::add<XRayIonicGasMixFamily>();
 
     // grain population
     ItemRegistry::add<GrainPopulation>();

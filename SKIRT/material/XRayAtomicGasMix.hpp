@@ -10,6 +10,10 @@
 #include "ElectronScatteringHelper.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
+namespace ElectronScatteringHelper
+{
+    class Helper;
+}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -303,7 +307,7 @@ class XRayAtomicGasMix : public MaterialMix
     ENUM_END()
 
     ITEM_CONCRETE(XRayAtomicGasMix, MaterialMix,
-                  "A gas mix supporting photo-absorption and fluorescence for X-ray wavelengths")
+                  "A neutral gas mix supporting photo-absorption and fluorescence at X-ray wavelengths")
         ATTRIBUTE_TYPE_INSERT(XRayAtomicGasMix, "GasMix")
 
         PROPERTY_DOUBLE_LIST(abundancies, "the abundancies for the elements with atomic number Z = 1,...,30")
@@ -490,8 +494,8 @@ private:
     ArrayTable<2> _cumprobscavv;  // indexed on ell, m
 
     // bound-electron scattering helpers depending on the configured implementation
-    ScatteringHelper* _ray{nullptr};  // Rayleigh scattering helper
-    ScatteringHelper* _com{nullptr};  // Compton scattering helper
+    ElectronScatteringHelper::Helper* _ray{nullptr};  // Rayleigh scattering helper
+    ElectronScatteringHelper::Helper* _com{nullptr};  // Compton scattering helper
 };
 
 ////////////////////////////////////////////////////////////////////
