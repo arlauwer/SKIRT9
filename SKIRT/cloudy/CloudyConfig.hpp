@@ -12,7 +12,7 @@ struct CloudyConfig
     struct RadField
     {
         int numBins{0};
-        Array edgev;         // rydberg, ascending, size numBins+1
+        Array borderv;       // rydberg, ascending, size numBins+1
         Array widthv;        // m, size numBins
         double minFlux{0.};  // W/m2/m, floor used to avoid zeros in the SED file
     };

@@ -48,10 +48,6 @@ double AtomUtils::mass(int Z)
 
 ////////////////////////////////////////////////////////////////////
 
-// Ions are ordered as such
-// i    =   0,    1,    2,    3,    4,    5, ...
-// name = H+1,  H+0, He+2, He+1, He+0, Li+3, ...
-// Z-N  = 1-0, 1-1,   2-0,  2-1,  2-2,  3-0, ...
 int AtomUtils::ionIndex(int Z, int N)
 {
     return Z * (Z + 1) / 2 + N - 1;
@@ -61,7 +57,7 @@ int AtomUtils::ionIndex(int Z, int N)
 
 string AtomUtils::ionName(int Z, int N)
 {
-    return reverseAtomMap.at(Z - N) + "+" + std::to_string(N);
+    return reverseAtomMap.at(Z) + "+" + std::to_string(Z - N);
 }
 
 ////////////////////////////////////////////////////////////////////

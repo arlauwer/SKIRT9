@@ -119,6 +119,8 @@ void Cloudy::createSim(const Input& input) const
     contents = StringUtils::replace(contents, "{hden}", StringUtils::toString(hden));
     contents = StringUtils::replace(contents, "{metal}", StringUtils::toString(input.metal));
     contents = StringUtils::replace(contents, "{ins}", StringUtils::toString(ins));
+    contents = StringUtils::replace(contents, "{minRy}", StringUtils::toString(_config.rad.borderv.min()));
+    contents = StringUtils::replace(contents, "{maxRy}", StringUtils::toString(_config.rad.borderv.max()));
 
     string path = localPath("sim.in");
     std::ofstream sim = openOutput(path);
@@ -138,8 +140,8 @@ void Cloudy::createSed(const Input& input) const
 
     for (int i = 0; i < _config.rad.numBins; i++)
     {
-        double left = _config.rad.edgev[i] * 0.9999;
-        double right = _config.rad.edgev[i + 1] * 1.00001;
+        double left = _config.rad.borderv[i] * 0.9999;
+        double right = _config.rad.borderv[i + 1] * 1.00001;
         double flux = max(input.radv[i], _config.rad.minFlux);
 
         sed << left << "\t" << flux << (i == 0 ? " Flambda" : "") << "\n";

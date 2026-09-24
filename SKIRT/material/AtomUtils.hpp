@@ -9,7 +9,7 @@
 #include "Basics.hpp"
 
 /** This static class provides utility functions related to the treatment of atomic and ionic
-    species. */
+    species up to atomic number Z=30. */
 class AtomUtils final
 {
 public:
@@ -19,8 +19,13 @@ public:
     /** This function returns the mass of the specified atomic number in SI units. */
     static double mass(int Z);
 
+    /** This function returns the unique index associated with each ion. The index is determined
+		from the formula \f$Z(Z+1)/2+N-1\f$. This results in the ions {H+1, H+0, He+2, He+1, ...}
+		having indices {0, 1, 2, 3, ...}. */
     static int ionIndex(int Z, int N);
 
+    /** This function returns the full name of an ion given its atomic number and number of
+		electrons. e.g. ionName(26, 26) returns "Fe+0". */
     static string ionName(int Z, int N);
 
     /** This function returns a pair of the atomic number and number of electrons (Z,N) of the

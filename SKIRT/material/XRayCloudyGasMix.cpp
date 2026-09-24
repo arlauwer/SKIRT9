@@ -80,8 +80,7 @@ void XRayCloudyGasMix::setupSelfBefore()
     }
 
     auto radGrid = find<Configuration>()->radiationFieldWLG();
-
-    if (!radGrid->isAdjacent()) throw FATALERROR("Radiation field must consist of consecutive wavelength bins");
+    if (!radGrid->isContiguous()) throw FATALERROR("Radiation field must consist of consecutive wavelength bins");
 
     // load optical wavelength grid
     TextInFile optGrid(this, "XRayCloudyGasMix_wav.dat", "Optical wavelength grid", true);
@@ -319,10 +318,7 @@ double XRayCloudyGasMix::sectionExt(double /*lambda*/) const
 double XRayCloudyGasMix::opacityAbs(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int ell = indexForLambda(lambda);
-    if (ell < 0 || ell >= _cloudyConfig.wav.numBins)
-        return 0.;
-    else
-        return state->getKappaAbs(ell);
+    return state->getKappaAbs(ell);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -330,10 +326,7 @@ double XRayCloudyGasMix::opacityAbs(double lambda, const MaterialState* state, c
 double XRayCloudyGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int ell = indexForLambda(lambda);
-    if (ell < 0 || ell >= _cloudyConfig.wav.numBins)
-        return 0.;
-    else
-        return state->getKappaSca(ell);
+    return state->getKappaSca(ell);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -341,10 +334,7 @@ double XRayCloudyGasMix::opacitySca(double lambda, const MaterialState* state, c
 double XRayCloudyGasMix::opacityExt(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int ell = indexForLambda(lambda);
-    if (ell < 0 || ell >= _cloudyConfig.wav.numBins)
-        return 0.;
-    else
-        return state->getKappaAbs(ell) + state->getKappaSca(ell);
+    return state->getKappaAbs(ell) + state->getKappaSca(ell);
 }
 
 ////////////////////////////////////////////////////////////////////

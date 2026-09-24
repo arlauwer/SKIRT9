@@ -200,7 +200,7 @@ public:
     const Array& borderv() const { return _borderv; }
 
     /** This function returns true if the wavelength bins are adjacent, i.e. with no gaps. */
-    bool isAdjacent() const { return _lambdav.size() == _borderv.size() - 1; }
+    bool isContiguous() const { return _lambdav.size() == _borderv.size() - 1; }
 
     //======================== Data Members ========================
 
