@@ -96,7 +96,7 @@ void Cloudy::run(const Input& input, Output& output) const
 {
     createInput(input);
     execute();
-    readOutput(input, output);
+    readOutput(output);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -161,10 +161,10 @@ void Cloudy::execute() const
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::readOutput(const Input& input, Output& output) const
+void Cloudy::readOutput(Output& output) const
 {
     readTemp(output);
-    readAbun(input, output);
+    readAbun(output);
     readOpac(output);
     readEmis(output);
     readLines(output);
@@ -186,7 +186,7 @@ void Cloudy::readTemp(Output& output) const
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::readAbun(const Input& input, Output& output) const
+void Cloudy::readAbun(Output& output) const
 {
     string path = localPath("sim.species");
     std::ifstream file = openInput(path);
@@ -199,11 +199,11 @@ void Cloudy::readAbun(const Input& input, Output& output) const
     auto dataCols = splitRow(line, headerCols.size(), path);
     const vector<int>& ionIndices = _species.columnsFor(headerCols);
 
-    double hden = input.hden * 1e-6;  // 1/m3 -> 1/cm3
     for (size_t i = 0; i < ionIndices.size(); i++)
     {
         int ionIndex = ionIndices[i];
-        if (ionIndex >= 0) output.abunv[ionIndex] = StringUtils::toDouble(dataCols[i]) / hden;
+        double abundance = StringUtils::toDouble(dataCols[i]) * 1e-6;  // 1/m3 -> 1/cm3
+        if (ionIndex >= 0) output.abunv[ionIndex] = abundance;
     }
 }
 

@@ -60,6 +60,10 @@ public:
 private:
     int indexForLambda(double lambda) const;
 
+    Array getKappaScaCum(const MaterialState* state, int ell) const;
+
+    void setKappaScaCum(MaterialState* state, int ell, const Array& kappaScaCum) const;
+
     //============= Capabilities =============
 
     MaterialType materialType() const override;

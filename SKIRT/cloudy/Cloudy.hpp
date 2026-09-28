@@ -63,9 +63,9 @@ private:
 
     void execute() const;
 
-    void readOutput(const Input& input, Output& output) const;
+    void readOutput(Output& output) const;
     void readTemp(Output& output) const;
-    void readAbun(const Input& input, Output& output) const;
+    void readAbun(Output& output) const;
     void readOpac(Output& output) const;
     void readEmis(Output& output) const;
     void readLines(Output& output) const;

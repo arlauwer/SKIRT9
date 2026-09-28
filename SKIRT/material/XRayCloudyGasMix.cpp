@@ -32,7 +32,7 @@ namespace
 
     constexpr double vtherm(double T, double amu)
     {
-        return sqrt(Constants::k() / Constants::amu() * T / amu);
+        return sqrt(Constants::k() * T / amu);
     }
 
     // convert photon energy in Ry to and from wavelength in m (same conversion in both directions)
@@ -123,6 +123,35 @@ int XRayCloudyGasMix::indexForLambda(double lambda) const
 
 ////////////////////////////////////////////////////////////////////
 
+Array XRayCloudyGasMix::getKappaScaCum(const MaterialState* state, int ell) const
+{
+    Array kappaScaCum(_numElec + 1);
+    kappaScaCum[0] = 0;
+    for (int e = 0; e < _numElec - 1; e++)
+    {
+        int index = _indexKappaScaCum + ell * (_numElec - 1) + e;
+        kappaScaCum[e + 1] = state->custom(index);
+    }
+    kappaScaCum[_numElec] = 1;
+
+    return kappaScaCum;
+}
+
+////////////////////////////////////////////////////////////////////
+
+void XRayCloudyGasMix::setKappaScaCum(MaterialState* state, int ell, const Array& kappaScaCum) const
+{
+    // kappaScaCum[0] = 1 is by definition
+    for (int e = 0; e < _numElec - 1; e++)
+    {
+        int index = _indexKappaScaCum + ell * (_numElec - 1) + e;
+        state->setCustom(index, kappaScaCum[e + 1]);
+    }
+    // kappaScaCum[_numElec] = 1 is by definition
+}
+
+////////////////////////////////////////////////////////////////////
+
 MaterialMix::MaterialType XRayCloudyGasMix::materialType() const
 {
     return MaterialMix::MaterialType::Gas;
@@ -180,8 +209,6 @@ bool XRayCloudyGasMix::hasLineEmission() const
 #define getKappaAbs(ell) custom(_indexKappaAbs + (ell))
 #define setKappaSca(ell, value) setCustom(_indexKappaSca + (ell), (value))
 #define getKappaSca(ell) custom(_indexKappaSca + (ell))
-#define setKappaScaCum(ell, index, value) setCustom(_indexKappaScaCum + (ell) * _numElec + (index), (value))
-#define getKappaScaCum(ell, index) custom(_indexKappaScaCum + (ell) * _numElec + (index))
 #define setEmissivity(ell, value) setCustom(_indexEmissivity + (ell), (value))
 #define getEmissivity(ell) custom(_indexEmissivity + (ell))
 #define setLineEmissivity(ell, value) setCustom(_indexLineEmissivity + (ell), (value))
@@ -221,14 +248,17 @@ vector<StateVariable> XRayCloudyGasMix::specificStateVariableInfo() const
     for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
         result.push_back(StateVariable::custom(index++, "absorption opacity", "opacity"));
 
-    const_cast<XRayCloudyGasMix*>(this)->_indexKappaSca = index;
-    for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
-        result.push_back(StateVariable::custom(index++, "scattering opacity", "opacity"));
+    if (_numElec > 0)
+    {
+        const_cast<XRayCloudyGasMix*>(this)->_indexKappaSca = index;
+        for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
+            result.push_back(StateVariable::custom(index++, "scattering opacity", "opacity"));
 
-    const_cast<XRayCloudyGasMix*>(this)->_indexKappaScaCum = index;
-    for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
-        for (int e = 0; e < _numElec + 1; e++)
-            result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
+        const_cast<XRayCloudyGasMix*>(this)->_indexKappaScaCum = index;
+        for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
+            for (int e = 0; e < _numElec - 1; e++)
+                result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
+    }
 
     const_cast<XRayCloudyGasMix*>(this)->_indexEmissivity = index;
     for (int ell = 0; ell < _cloudyConfig.wav.numBins + 2; ell++)
@@ -348,8 +378,7 @@ void XRayCloudyGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* s
 
         // copy kappaScaCum from the state
         int ell = indexForLambda(lambda);
-        Array kappaScaCum(_numElec + 1);
-        for (int i = 0; i < _numElec + 1; i++) kappaScaCum[i] = state->getKappaScaCum(ell, i);
+        Array kappaScaCum = getKappaScaCum(state, ell);
 
         scatinfo->species = NR::locateClip(kappaScaCum, random()->uniform());
         int a = scatinfo->species;
@@ -474,33 +503,30 @@ void XRayCloudyGasMix::updateSpecificState(MaterialState* state, const Cloudy::O
         // absorption and emission
         double abs = output.opacv[ell];
         double emi = output.emisv[ell];
-        if (std::isnan(abs) || std::isnan(emi)) throw FATALERROR("Cloudy::readOutput found NaN in opac or emis");
         state->setEmissivity(ell, emi);
         state->setKappaAbs(ell, abs);
 
-        // recalculate scattering with new abundances
-        Array kappaScaFractions(0., _numElec);
-        Array kappaScaCum;
-
-        // for all ions
-        for (int i = 0; i < numIons; i++)
+        if (_numElec > 0)
         {
-            const auto& ion = _ionParamv[i];
+            // recalculate scattering with new abundances
+            Array kappaScaFractions(0., _numElec);
+            Array kappaScaCum(0., _numElec + 1);
 
-            // only free electron scattering is supported
-            int species = ion.Z - 1;
+            for (int i = 0; i < numIons; i++)
+            {
+                const auto& ion = _ionParamv[i];
 
-            // accumulate abundances of all ions of same Z
-            kappaScaFractions[species] += _com->sectionSca(lambda, ion.Z, ion.N) * output.abunv[i];
-        }
+                // only free electron scattering is supported
+                int species = ion.Z - 1;
 
-        // determine the normalized cumulative probability distribution and the cross section
-        double kappaSca = NR::cdf(kappaScaCum, kappaScaFractions);
+                // accumulate abundances of all ions of same Z
+                kappaScaFractions[species] += _com->sectionSca(lambda, ion.Z, ion.N) * state->getAbundance(i);
+            }
+            // determine the normalized cumulative probability distribution and the cross section
+            double kappaSca = NR::cdf(kappaScaCum, kappaScaFractions);
 
-        state->setKappaSca(ell, kappaSca);
-        for (int i = 0; i < _numElec + 1; i++)
-        {
-            state->setKappaScaCum(ell, i, kappaScaCum[i]);
+            state->setKappaSca(ell, kappaSca);
+            setKappaScaCum(state, ell, kappaScaCum);
         }
     }
 
