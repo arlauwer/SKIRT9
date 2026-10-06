@@ -202,7 +202,7 @@ void Cloudy::readAbun(Output& output) const
     for (size_t i = 0; i < ionIndices.size(); i++)
     {
         int ionIndex = ionIndices[i];
-        double abundance = StringUtils::toDouble(dataCols[i]) * 1e-6;  // 1/m3 -> 1/cm3
+        double abundance = StringUtils::toDouble(dataCols[i]) * 1e6;  // 1/cm3 -> 1/m3
         if (ionIndex >= 0) output.abunv[ionIndex] = abundance;
     }
 }

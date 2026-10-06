@@ -141,13 +141,13 @@ Array XRayCloudyGasMix::getKappaScaCum(const MaterialState* state, int ell) cons
 
 void XRayCloudyGasMix::setKappaScaCum(MaterialState* state, int ell, const Array& kappaScaCum) const
 {
-    // kappaScaCum[0] = 1 is by definition
+    // kappaScaCum[0] = 0 by definition
     for (int e = 0; e < _numElec - 1; e++)
     {
         int index = _indexKappaScaCum + ell * (_numElec - 1) + e;
         state->setCustom(index, kappaScaCum[e + 1]);
     }
-    // kappaScaCum[_numElec] = 1 is by definition
+    // kappaScaCum[_numElec] = 1 by definition
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -246,13 +246,20 @@ vector<StateVariable> XRayCloudyGasMix::specificStateVariableInfo() const
 
     const_cast<XRayCloudyGasMix*>(this)->_indexKappaAbs = index;
     for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
-        result.push_back(StateVariable::custom(index++, "absorption opacity", "opacity"));
+    {
+        string lambda = StringUtils::toString(_cloudyConfig.wav.lambdav[ell]);
+        result.push_back(StateVariable::custom(index++, "absorption opacity at lambda=" + lambda + " m", "opacity"));
+    }
 
     if (_numElec > 0)
     {
         const_cast<XRayCloudyGasMix*>(this)->_indexKappaSca = index;
         for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
-            result.push_back(StateVariable::custom(index++, "scattering opacity", "opacity"));
+        {
+            string lambda = StringUtils::toString(_cloudyConfig.wav.lambdav[ell]);
+            result.push_back(
+                StateVariable::custom(index++, "scattering opacity at lambda=" + lambda + " m", "opacity"));
+        }
 
         const_cast<XRayCloudyGasMix*>(this)->_indexKappaScaCum = index;
         for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
