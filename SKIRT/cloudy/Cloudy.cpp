@@ -265,7 +265,7 @@ void Cloudy::readLines(Output& output) const
 
     for (int i = 0; i < _config.numLines; i++)
     {
-        output.linev[i] = StringUtils::toDouble(cols[i + 1]) * 1e-7;  // ergs/s -> W
+        output.linev[i] = StringUtils::toDouble(cols[i + 1]) * 1e-1;  // ergs/s/cm3 -> W/m3
     }
 }
 

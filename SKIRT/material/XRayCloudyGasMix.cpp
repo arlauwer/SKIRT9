@@ -234,7 +234,7 @@ vector<StateVariable> XRayCloudyGasMix::specificStateVariableInfo() const
         const auto& ion = _ionParamv[i];
         string name = AtomUtils::ionName(ion.Z, ion.N);
 
-        result.push_back(StateVariable::custom(index++, name + " abundance", "dimensionless"));
+        result.push_back(StateVariable::custom(index++, name + " abundance", "numbervolumedensity"));
     }
 
     const_cast<XRayCloudyGasMix*>(this)->_indexThermalVelocity = index;
