@@ -116,11 +116,16 @@ void XRayCloudyGasMix::setupSelfBefore()
     _cloudyConfig.execPath = execPath;
 
     CloudyWrapper::LookupOptions lookup;
-    lookup.enabled = useLookupTable();
+    switch (tableMode())
+    {
+        case TableMode::Direct: lookup.mode = CloudyWrapper::LookupOptions::Mode::Direct; break;
+        case TableMode::Record: lookup.mode = CloudyWrapper::LookupOptions::Mode::Record; break;
+        case TableMode::Lookup: lookup.mode = CloudyWrapper::LookupOptions::Mode::Lookup; break;
+    }
     lookup.numNeighbors = numNeighbors();
     lookup.matchDistance = matchDistance();
     lookup.interpolationDistance = interpolationDistance();
-    if (lookup.enabled && interpolationDistance() < matchDistance())
+    if (tableMode() == TableMode::Lookup && interpolationDistance() < matchDistance())
         throw FATALERROR("The interpolation distance must not be smaller than the match distance");
 
     // each process uses its own run directories
@@ -133,7 +138,7 @@ void XRayCloudyGasMix::setupSelfBefore()
     _cloudyWrapper->setup(_cloudyConfig, FilePaths::resource("XRayCloudyGasMix_template.in"), tableDirectory(),
                           runsPath, lookup);
 
-    if (lookup.enabled)
+    if (_cloudyWrapper->usesTable())
         find<Log>()->info("Loaded Cloudy lookup table with " + std::to_string(_cloudyWrapper->tableSize())
                           + " runs from " + tableDirectory());
 }
@@ -364,14 +369,14 @@ bool XRayCloudyGasMix::isSpecificStateConverged(int numCells, int numUpdated, in
     ProcessManager::sumToAll(counts);
     auto log = find<Log>();
     string message = "  Cloudy runs: " + std::to_string(static_cast<size_t>(counts[0]));
-    if (useLookupTable())
+    if (tableMode() == TableMode::Lookup)
     {
         message += ", reused: " + std::to_string(static_cast<size_t>(counts[1]))
                    + ", interpolated: " + std::to_string(static_cast<size_t>(counts[2]));
     }
     log->info(message);
 
-    if (useLookupTable())
+    if (_cloudyWrapper->usesTable())
     {
         // share the new runs between processes, so that all processes hold all runs
         if (ProcessManager::isMultiProc())

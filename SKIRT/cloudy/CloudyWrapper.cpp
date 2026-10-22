@@ -110,7 +110,7 @@ void CloudyWrapper::setup(const CloudyConfig& config, string templatePath, strin
     _runsPath = runsPath;
 
     if (!_config.ionIndex) throw FATALERROR("CloudyWrapper: no ion mapping has been configured");
-    if (_lookup.enabled)
+    if (_lookup.mode == LookupOptions::Mode::Lookup)
     {
         if (_lookup.numNeighbors < 1) throw FATALERROR("CloudyWrapper: the number of neighbours must be positive");
         if (_lookup.matchDistance < 0. || _lookup.interpolationDistance < _lookup.matchDistance)
@@ -127,7 +127,7 @@ void CloudyWrapper::setup(const CloudyConfig& config, string templatePath, strin
     _empty.resize(_config);
 
     // create or load the lookup table
-    if (_lookup.enabled)
+    if (usesTable())
     {
         if (!System::makeDir(_tablePath)) throw FATALERROR("CloudyWrapper: could not create " + _tablePath);
         _recordSize = numDimsFor(_config) + 1 + _config.numIons + 2 * _config.wav.numBins + _config.numLines;
@@ -145,7 +145,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
         throw FATALERROR("CloudyWrapper: the radiation field has the wrong number of bins");
 
     // direct mode: always run Cloudy
-    if (!_lookup.enabled)
+    if (!usesTable())
     {
         Cloudy::Output output;
         run(input, output);
@@ -154,7 +154,10 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 
     Array point = pointFor(input);
     std::unique_lock<std::mutex> lock(_mutex);
-    auto neighbors = _index->search(&point[0], _lookup.numNeighbors);
+
+    // record mode: skip the search and always run Cloudy
+    vector<NNIndex::Neighbor> neighbors;
+    if (_lookup.mode == LookupOptions::Mode::Lookup) neighbors = _index->search(&point[0], _lookup.numNeighbors);
 
     // reuse the nearest run if it is close enough; a distance so small that its inverse overflows is treated as a
     // match as well, so that the interpolation weights below are always finite
@@ -174,7 +177,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     }
 
     // interpolate if all neighbours are close enough
-    if (static_cast<int>(neighbors.size()) == _lookup.numNeighbors
+    if (!neighbors.empty() && static_cast<int>(neighbors.size()) == _lookup.numNeighbors
         && neighbors.back().first <= _lookup.interpolationDistance)
     {
         vector<const Entry*> entries;
@@ -243,6 +246,13 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 
 ////////////////////////////////////////////////////////////////////
 
+bool CloudyWrapper::usesTable() const
+{
+    return _lookup.mode != LookupOptions::Mode::Direct;
+}
+
+////////////////////////////////////////////////////////////////////
+
 size_t CloudyWrapper::tableSize() const
 {
     std::unique_lock<std::mutex> lock(_mutex);
@@ -265,7 +275,7 @@ CloudyWrapper::Statistics CloudyWrapper::takeStatistics()
 void CloudyWrapper::exportNewRuns(vector<double>& data)
 {
     std::unique_lock<std::mutex> lock(_mutex);
-    if (!_lookup.enabled) return;
+    if (!usesTable()) return;
 
     data.reserve(data.size() + _newLabels.size() * _recordSize);
     for (size_t label : _newLabels)
@@ -282,7 +292,7 @@ void CloudyWrapper::exportNewRuns(vector<double>& data)
 void CloudyWrapper::importRuns(const vector<double>& data)
 {
     std::unique_lock<std::mutex> lock(_mutex);
-    if (!_lookup.enabled) return;
+    if (!usesTable()) return;
     if (data.size() % _recordSize) throw FATALERROR("CloudyWrapper: imported runs have an unexpected size");
 
     for (size_t first = 0; first != data.size(); first += _recordSize)
@@ -298,7 +308,7 @@ void CloudyWrapper::importRuns(const vector<double>& data)
 bool CloudyWrapper::save()
 {
     std::unique_lock<std::mutex> lock(_mutex);
-    if (!_lookup.enabled || (_numSaved == _entries.size() && _indexSaved)) return false;
+    if (!usesTable() || (_numSaved == _entries.size() && _indexSaved)) return false;
 
     for (size_t label = _numSaved; label != _entries.size(); ++label)
         if (!_entries[label].complete)

@@ -25,15 +25,24 @@
 
     <b>Cloudy runs and the lookup table</b>
 
-    The Cloudy runs are performed in subdirectories of the configured table directory. By default,
-    the results of all runs are stored in a persistent lookup table in that same directory, so
-    that they can be reused for cells with similar input parameters, both within a simulation and
-    across simulations. For each cell, the \em numNeighbors stored runs nearest to the cell's input
-    parameters are located. If the nearest run lies within \em matchDistance, it is reused as is;
-    otherwise, if all of these runs lie within \em interpolationDistance, their results are
-    interpolated; otherwise, Cloudy is invoked and the result is added to the table. Refer to the
-    CloudyWrapper class for the definition of the distance and other details. The table is saved
-    after each medium state update.
+    The Cloudy runs are performed in subdirectories of the configured table directory. The
+    \em tableMode property determines how the results are obtained. In \em Direct mode, Cloudy
+    is invoked for every cell and nothing is stored. In \em Record mode, Cloudy is invoked for
+    every cell as well, and the results of all runs are stored in a persistent lookup table in the
+    table directory; this provides a reference simulation and, at the same time, a table that can
+    be used by later simulations or read by external tools. In \em Lookup mode (the default),
+    previous runs stored in the table are reused for cells with similar input parameters, both
+    within a simulation and across simulations. For each cell, the \em numNeighbors stored runs
+    nearest to the cell's input parameters are located. If the nearest run lies within
+    \em matchDistance, it is reused as is; otherwise, if all of these runs lie within
+    \em interpolationDistance, their results are interpolated; otherwise, Cloudy is invoked and
+    the result is added to the table. Refer to the CloudyWrapper class for the definition of the
+    distance, the format of the table, and other details. In Record and Lookup mode, the table is
+    saved after each medium state update.
+
+    After each medium state update, the log reports how the cells were handled, in the format
+    <tt>Cloudy runs: N</tt> (Direct and Record mode) or <tt>Cloudy runs: N, reused: M,
+    interpolated: K</tt> (Lookup mode). Cells with zero density are not counted.
 
     A table directory can only be reused by simulations with the same radiation field wavelength
     grid, minimum radiation field, Cloudy input template, and Cloudy wavelength and line lists.
@@ -61,6 +70,12 @@ class XRayCloudyGasMix : public EmittingGasMix
                  "use free-electron Compton scattering with support for polarization")
     ENUM_END()
 
+    ENUM_DEF(TableMode, Direct, Record, Lookup)
+        ENUM_VAL(TableMode, Direct, "run Cloudy for every cell and store nothing")
+        ENUM_VAL(TableMode, Record, "run Cloudy for every cell and store every run in the lookup table")
+        ENUM_VAL(TableMode, Lookup, "reuse and interpolate previous Cloudy runs stored in the lookup table")
+    ENUM_END()
+
     ITEM_CONCRETE(XRayCloudyGasMix, EmittingGasMix,
                   "An ionised gas mix using Cloudy to calculate the charge state and temperature self-consistently")
         ATTRIBUTE_TYPE_INSERT(XRayCloudyGasMix, "GasMix,CustomMediumState")
@@ -82,27 +97,27 @@ class XRayCloudyGasMix : public EmittingGasMix
         ATTRIBUTE_DEFAULT_VALUE(radMin, "1e-5")
         ATTRIBUTE_MIN_VALUE(radMin, "]0")
 
-        PROPERTY_BOOL(useLookupTable, "reuse and interpolate previous Cloudy runs stored in a lookup table")
-        ATTRIBUTE_DEFAULT_VALUE(useLookupTable, "true")
-        ATTRIBUTE_DISPLAYED_IF(useLookupTable, "Level2")
+        PROPERTY_ENUM(tableMode, TableMode, "how Cloudy runs are obtained and stored")
+        ATTRIBUTE_DEFAULT_VALUE(tableMode, "Lookup")
+        ATTRIBUTE_DISPLAYED_IF(tableMode, "Level2")
 
         PROPERTY_INT(numNeighbors, "the number of nearest neighbours used for interpolation")
         ATTRIBUTE_MIN_VALUE(numNeighbors, "1")
         ATTRIBUTE_MAX_VALUE(numNeighbors, "100")
         ATTRIBUTE_DEFAULT_VALUE(numNeighbors, "4")
-        ATTRIBUTE_RELEVANT_IF(numNeighbors, "useLookupTable")
+        ATTRIBUTE_RELEVANT_IF(numNeighbors, "tableModeLookup")
         ATTRIBUTE_DISPLAYED_IF(numNeighbors, "Level3")
 
         PROPERTY_DOUBLE(matchDistance, "the maximum distance for reusing a previous Cloudy run as is")
         ATTRIBUTE_MIN_VALUE(matchDistance, "[0")
         ATTRIBUTE_DEFAULT_VALUE(matchDistance, "0.01")
-        ATTRIBUTE_RELEVANT_IF(matchDistance, "useLookupTable")
+        ATTRIBUTE_RELEVANT_IF(matchDistance, "tableModeLookup")
         ATTRIBUTE_DISPLAYED_IF(matchDistance, "Level3")
 
         PROPERTY_DOUBLE(interpolationDistance, "the maximum distance for interpolating between previous Cloudy runs")
         ATTRIBUTE_MIN_VALUE(interpolationDistance, "[0")
         ATTRIBUTE_DEFAULT_VALUE(interpolationDistance, "0.1")
-        ATTRIBUTE_RELEVANT_IF(interpolationDistance, "useLookupTable")
+        ATTRIBUTE_RELEVANT_IF(interpolationDistance, "tableModeLookup")
         ATTRIBUTE_DISPLAYED_IF(interpolationDistance, "Level3")
 
     ITEM_END()
