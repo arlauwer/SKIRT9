@@ -1,5 +1,9 @@
+/*//////////////////////////////////////////////////////////////////
+////     The SKIRT project -- advanced radiative transfer       ////
+////       © Astronomical Observatory, Ghent University         ////
+///////////////////////////////////////////////////////////////// */
+
 #include "Cloudy.hpp"
-#include "AtomUtils.hpp"
 #include "FatalError.hpp"
 #include "StringUtils.hpp"
 #include "System.hpp"
@@ -56,7 +60,7 @@ void Cloudy::Output::resize(const CloudyConfig& config)
 
 ////////////////////////////////////////////////////////////////////
 
-const vector<int>& CloudySpeciesHeader::columnsFor(const vector<string>& headerCols)
+const vector<int>& CloudySpeciesHeader::columnsFor(const vector<string>& headerCols, const CloudyConfig& config)
 {
     std::unique_lock<std::mutex> lock(_mutex);
 
@@ -70,8 +74,9 @@ const vector<int>& CloudySpeciesHeader::columnsFor(const vector<string>& headerC
         _ionIndices.assign(headerCols.size(), -1);
         for (size_t i = 1; i < headerCols.size() - numTrailing; i++)
         {
-            auto ion = AtomUtils::parseIon(headerCols[i]);
-            _ionIndices[i] = AtomUtils::ionIndex(ion.first, ion.second);
+            int index = config.ionIndex(headerCols[i]);
+            if (index >= config.numIons) throw FATALERROR("Cloudy: ion index out of range for " + headerCols[i]);
+            _ionIndices[i] = index;
         }
         _header = headerCols;
     }
@@ -197,7 +202,7 @@ void Cloudy::readAbun(Output& output) const
 
     auto headerCols = StringUtils::split(header, "\t");
     auto dataCols = splitRow(line, headerCols.size(), path);
-    const vector<int>& ionIndices = _species.columnsFor(headerCols);
+    const vector<int>& ionIndices = _species.columnsFor(headerCols, _config);
 
     for (size_t i = 0; i < ionIndices.size(); i++)
     {

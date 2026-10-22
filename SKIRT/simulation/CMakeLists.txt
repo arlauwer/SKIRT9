@@ -36,12 +36,12 @@ target_link_libraries(${TARGET} serialize schema fundamentals build)
 include_directories(../../SMILE/serialize ../../SMILE/schema ../../SMILE/fundamentals ../../SMILE/build)
 
 # add direct SKIRT library dependencies
-target_link_libraries(${TARGET} field geometry grain instrument material medium mpi probe sed source tools utils wavelength cloudy hnsw)
-include_directories(../field ../geometry ../grain ../instrument ../material ../medium ../mpi ../probe ../sed ../source ../tools ../utils ../wavelength ../cloudy ../hnsw)
+target_link_libraries(${TARGET} field geometry grain instrument material medium mpi probe sed source tools utils wavelength)
+include_directories(../field ../geometry ../grain ../instrument ../material ../medium ../mpi ../probe ../sed ../source ../tools ../utils ../wavelength)
 
 # add indirect SKIRT library dependencies (needed transitively via the direct ones above)
-target_link_libraries(${TARGET} fitsio tetgen voro)
-include_directories(../fitsio ../voro)
+target_link_libraries(${TARGET} cloudy fitsio hnsw tetgen voro)
+include_directories(../cloudy ../fitsio ../voro)
 include_directories(SYSTEM ../tetgen)  # suppress warnings in tetgen header
 
 # adjust C++ compiler flags to our needs

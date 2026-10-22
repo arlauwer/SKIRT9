@@ -1,56 +1,73 @@
+/*//////////////////////////////////////////////////////////////////
+////     The SKIRT project -- advanced radiative transfer       ////
+////       © Astronomical Observatory, Ghent University         ////
+///////////////////////////////////////////////////////////////// */
+
 #ifndef NNINDEX_HPP
 #define NNINDEX_HPP
 
 #include "Basics.hpp"
+#include <memory>
 
-namespace hnswlib
-{
-    template<typename T> class SpaceInterface;
-    template<typename T> class HierarchicalNSW;
-}
+////////////////////////////////////////////////////////////////////
 
+/** NNIndex is a thin wrapper around the header-only hnswlib library, which implements approximate
+    nearest-neighbour search using a hierarchical navigable small world (HNSW) graph. The wrapper
+    hides the hnswlib headers from client code and adds automatic growth of the index capacity.
+
+    The index stores points with a fixed number of dimensions, each identified by a caller-chosen
+    label. Distances are measured with the L1 (Manhattan) norm, \f$d(\mathbf{x},\mathbf{y}) =
+    \sum_i |x_i-y_i|\f$. A client that wishes to weigh some coordinates more heavily than others
+    should scale them accordingly before handing them to the index.
+
+    This class is <b>not</b> thread-safe. The caller must serialize all access to an instance,
+    including searches. */
 class NNIndex final
 {
 public:
-    using DistFunc = double (*)(const void*, const void*, const void*);
+    /** This type holds a search result, i.e. the distance to a point and the label of that point. */
+    using Neighbor = std::pair<double, size_t>;
 
+    /** The constructor creates an empty index for points with the specified number of dimensions.
+        The initial capacity is a hint only; the index grows automatically as needed. */
+    explicit NNIndex(int numDims, size_t initialCapacity = 1024);
+
+    /** The destructor releases the hnswlib data structures. */
     ~NNIndex();
 
-    void setup(const string& _hnswPath, int dim, DistFunc distFunc);
+    NNIndex(const NNIndex&) = delete;
+    NNIndex& operator=(const NNIndex&) = delete;
 
-    // not thread safe!
-    vector<std::pair<double, size_t>> query(const double* point);
+    /** This function returns the number of dimensions of the points in the index. */
+    int numDims() const { return _numDims; }
 
-    void addPoint(const double* point, size_t label);
-
-    void load();
-
-    void save();
-
+    /** This function returns the number of points in the index. */
     size_t size() const;
 
-    size_t k() const { return _k; }
+    /** This function adds a point with the specified label to the index. The point must have
+        numDims() coordinates. The label must not yet be in use. */
+    void add(const double* point, size_t label);
 
-    double minDist() const { return _min_dist; }
+    /** This function returns (at most) the \em k approximate nearest neighbours of the specified
+        query point, sorted from closest to farthest. */
+    vector<Neighbor> search(const double* point, size_t k) const;
 
-    double maxDist() const { return _max_dist; }
+    /** This function replaces the contents of the index by the index stored in the specified
+        file, which must have been created by save() for points with the same dimension. A
+        FatalError is thrown if the file cannot be read. */
+    void load(string path);
+
+    /** This function saves the index to the specified file. A FatalError is thrown if the file
+        cannot be written. */
+    void save(string path) const;
 
 private:
-    string _hnswPath;
-    int _dim;
+    class Impl;
 
-    // hnswlib params
-    size_t _max_elements{100000};  // set this properly!
-    int _M{16};
-    int _ef_const{100};
-    // custom params
-    size_t _k{4};
-    double _min_dist{0.};
-    double _max_dist{0.};
-
-    // hnsw
-    hnswlib::SpaceInterface<double>* _space{nullptr};
-    hnswlib::HierarchicalNSW<double>* _hnsw{nullptr};
+    int _numDims;
+    std::unique_ptr<Impl> _impl;
 };
+
+////////////////////////////////////////////////////////////////////
 
 #endif

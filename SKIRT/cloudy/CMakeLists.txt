@@ -4,7 +4,8 @@
 # //////////////////////////////////////////////////////////////////
 
 # ------------------------------------------------------------------
-# Builds a library for the SKIRT Cloudy wrapper
+# Builds a library that runs the external photoionization code Cloudy
+# (https://gitlab.nublado.org/cloudy/cloudy).
 # ------------------------------------------------------------------
 
 # set the target name
@@ -18,12 +19,12 @@ file(GLOB HEADERS "*.hpp")
 add_library(${TARGET} STATIC ${SOURCES} ${HEADERS})
 
 # add SMILE library dependencies
-target_link_libraries(${TARGET} schema fundamentals)
-include_directories(../../SMILE/schema ../../SMILE/fundamentals)
+target_link_libraries(${TARGET} fundamentals)
+include_directories(../../SMILE/fundamentals)
 
-# add required dependencies
-target_link_libraries(${TARGET} fundamentals hnsw utils tools wavelength material)
-include_directories(../../SMILE/fundamentals ../hnsw ../utils ../tools ../wavelength ../material)
+# add direct SKIRT library dependencies
+target_link_libraries(${TARGET} hnsw)
+include_directories(../hnsw)
 
 # adjust C++ compiler flags to our needs
 include("../../SMILE/build/CompilerFlags.cmake")

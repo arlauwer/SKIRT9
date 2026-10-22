@@ -16,6 +16,42 @@
 
 ////////////////////////////////////////////////////////////////////
 
+/** The XRayCloudyGasMix class describes the material properties of a partially ionized gas whose
+    temperature, ionization state, absorption opacity, continuum emissivity and line emissivities
+    are calculated self-consistently by the external photoionization code Cloudy. Each time the
+    medium state is updated, a one-zone Cloudy model is evaluated for every spatial cell, given the
+    hydrogen density and metallicity of the cell and the radiation field in the cell as calculated
+    by SKIRT. Electrons scatter photons through (optionally polarized) Compton scattering.
+
+    <b>Cloudy runs and the lookup table</b>
+
+    The Cloudy runs are performed in subdirectories of the configured table directory. By default,
+    the results of all runs are stored in a persistent lookup table in that same directory, so
+    that they can be reused for cells with similar input parameters, both within a simulation and
+    across simulations. For each cell, the \em numNeighbors stored runs nearest to the cell's input
+    parameters are located. If the nearest run lies within \em matchDistance, it is reused as is;
+    otherwise, if all of these runs lie within \em interpolationDistance, their results are
+    interpolated; otherwise, Cloudy is invoked and the result is added to the table. Refer to the
+    CloudyWrapper class for the definition of the distance and other details. The table is saved
+    after each medium state update.
+
+    A table directory can only be reused by simulations with the same radiation field wavelength
+    grid, minimum radiation field, Cloudy input template, and Cloudy wavelength and line lists.
+    For an incompatible configuration, the simulation stops with an error. A table directory
+    should not be shared by multiple medium components or simultaneously running simulations.
+
+    Previously saved runs are memory-mapped rather than read into memory, so that large tables
+    can be used; runs added during the current simulation are held in memory. When running with
+    multiple processes, each process performs the runs for its own cells. After each medium state
+    update, the new runs are sent to all processes, and the root process saves them. Within a
+    single update, processes may thus perform runs for similar cells that one process would have
+    reused or interpolated.
+
+    <b>Resources</b>
+
+    The Cloudy input template, the Cloudy wavelength grid, and the list of emission lines are
+    loaded from the resource files <tt>XRayCloudyGasMix_template.in</tt>,
+    <tt>XRayCloudyGasMix_wav.dat</tt>, and <tt>XRayCloudyGasMix_lines.dat</tt>. */
 class XRayCloudyGasMix : public EmittingGasMix
 {
     ENUM_DEF(ElectronScattering, None, Free, FreeWithPolarization)
@@ -46,26 +82,68 @@ class XRayCloudyGasMix : public EmittingGasMix
         ATTRIBUTE_DEFAULT_VALUE(radMin, "1e-5")
         ATTRIBUTE_MIN_VALUE(radMin, "]0")
 
+        PROPERTY_BOOL(useLookupTable, "reuse and interpolate previous Cloudy runs stored in a lookup table")
+        ATTRIBUTE_DEFAULT_VALUE(useLookupTable, "true")
+        ATTRIBUTE_DISPLAYED_IF(useLookupTable, "Level2")
+
+        PROPERTY_INT(numNeighbors, "the number of nearest neighbours used for interpolation")
+        ATTRIBUTE_MIN_VALUE(numNeighbors, "1")
+        ATTRIBUTE_MAX_VALUE(numNeighbors, "100")
+        ATTRIBUTE_DEFAULT_VALUE(numNeighbors, "4")
+        ATTRIBUTE_RELEVANT_IF(numNeighbors, "useLookupTable")
+        ATTRIBUTE_DISPLAYED_IF(numNeighbors, "Level3")
+
+        PROPERTY_DOUBLE(matchDistance, "the maximum distance for reusing a previous Cloudy run as is")
+        ATTRIBUTE_MIN_VALUE(matchDistance, "[0")
+        ATTRIBUTE_DEFAULT_VALUE(matchDistance, "0.01")
+        ATTRIBUTE_RELEVANT_IF(matchDistance, "useLookupTable")
+        ATTRIBUTE_DISPLAYED_IF(matchDistance, "Level3")
+
+        PROPERTY_DOUBLE(interpolationDistance, "the maximum distance for interpolating between previous Cloudy runs")
+        ATTRIBUTE_MIN_VALUE(interpolationDistance, "[0")
+        ATTRIBUTE_DEFAULT_VALUE(interpolationDistance, "0.1")
+        ATTRIBUTE_RELEVANT_IF(interpolationDistance, "useLookupTable")
+        ATTRIBUTE_DISPLAYED_IF(interpolationDistance, "Level3")
+
     ITEM_END()
 
     //============= Construction - Setup - Destruction =============
 
 public:
-    void setupSelfBefore() override;
-
+    /** The destructor releases the scattering helper and the Cloudy wrapper. */
     ~XRayCloudyGasMix();
+
+protected:
+    /** This function loads the resource files, sets up the scattering helper, and sets up the
+        Cloudy wrapper, loading the lookup table if applicable. */
+    void setupSelfBefore() override;
 
     //======== Private support functions =======
 
 private:
+    /** This function returns the index of the Cloudy wavelength bin containing the specified
+        wavelength, or -1 if the wavelength lies outside of the Cloudy wavelength grid. */
     int indexForLambda(double lambda) const;
 
+    /** This function returns the cumulative scattering probabilities over the atoms for the
+        specified wavelength bin, retrieved from the specified material state. */
     Array getKappaScaCum(const MaterialState* state, int ell) const;
 
+    /** This function stores the cumulative scattering probabilities over the atoms for the
+        specified wavelength bin in the specified material state. */
     void setKappaScaCum(MaterialState* state, int ell, const Array& kappaScaCum) const;
+
+    /** This function returns the absorption opacity for the specified wavelength bin, or zero if
+        the index is out of range. */
+    double kappaAbs(const MaterialState* state, int ell) const;
+
+    /** This function returns the scattering opacity for the specified wavelength bin, or zero if
+        the index is out of range or electron scattering is disabled. */
+    double kappaSca(const MaterialState* state, int ell) const;
 
     //============= Capabilities =============
 
+public:
     MaterialType materialType() const override;
 
     bool hasPolarizedScattering() const override;
@@ -84,13 +162,22 @@ private:
 
     vector<StateVariable> specificStateVariableInfo() const override;
 
+    /** This function initializes the specific state variables of a cell to the values of an empty
+        Cloudy result, i.e. all zero. */
     void initializeSpecificState(MaterialState* state, double metallicity, double temperature,
                                  const Array& params) const override;
 
     //======== Medium state updates =======
 
+    /** This function obtains the Cloudy results for the density, metallicity and radiation field
+        of the specified cell, and stores them in the cell's material state. */
     UpdateStatus updateSpecificState(MaterialState* state, const Array& Jv) const override;
 
+    /** This function is called after the medium state of all cells has been updated. It logs
+        statistics on the Cloudy runs and, if applicable, shares the new runs between processes
+        and saves the lookup table. Because each cell
+        update is reported as not converged, the medium state is never considered to be converged,
+        so that the number of iterations is determined by the configured maximum. */
     bool isSpecificStateConverged(int numCells, int numUpdated, int numNotConverged, MaterialState* currentAggregate,
                                   MaterialState* previousAggregate) const override;
 
@@ -112,9 +199,11 @@ private:
 
     double opacityExt(double lambda, const MaterialState* state, const PhotonPacket* pp) const override;
 
+private:
     void setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* scatinfo, double lambda,
                                    const MaterialState* state) const;
 
+public:
     bool peeloffScattering(double& I, double& Q, double& U, double& V, double& lambda, Direction bfkobs, Direction bfky,
                            const MaterialState* state, const PhotonPacket* pp) const override;
 
@@ -122,8 +211,11 @@ private:
 
     //======== Secondary continuum emission =======
 
+    /** This function returns the Cloudy wavelength grid. */
     DisjointWavelengthGrid* emissionWavelengthGrid() const override;
 
+    /** This function returns the continuum emission spectrum of the specified cell, discretized on
+        the extended Cloudy wavelength grid, i.e. with an extra zero value on either side. */
     Array emissionSpectrum(const MaterialState* state, const Array& Jv) const override;
 
     //======== Secondary line emission =======
@@ -136,12 +228,10 @@ private:
 
     //======== Temperature =======
 
-    /** This function returns an indicative temperature of the material mix when it would be
-    embedded in a given radiation field. The implementation in this class ignores the radiation
-    field and returns the (spatially constant) temperature configured for this material mix. */
+    /** This function returns the temperature of the specified cell as calculated by Cloudy. */
     double indicativeTemperature(const MaterialState* state, const Array& Jv) const override;
 
-    //======== Helper Classes =======
+    //======== Private helpers =======
 
 private:
     struct IonParam
@@ -150,34 +240,36 @@ private:
         int N;  // number of electrons
     };
 
-    //======== Helper Functions =======
-
-    void updateSpecificState(MaterialState* state, const Cloudy::Output& output) const;
+    /** This function stores the specified Cloudy results in the specified material state. */
+    void storeOutput(MaterialState* state, const Cloudy::Output& output) const;
 
     //======================== Data Members ========================
 
-    int _numElec;  // number of ions with electron scattering (either all or none)
+private:
+    int _numElec{0};  // number of species for electron scattering (one per atom, or none)
 
     vector<IonParam> _ionParamv;
     Array _lineMassv;
     Array _lineCenterv;
 
     // MediumState data
-    int _indexAbundances;       // numIons
-    int _indexThermalVelocity;  // numAtoms
-    int _indexKappaAbs;         // numLambda
-    int _indexKappaSca;         // numLambda
-    int _indexKappaScaCum;      // numLambda x _numElec+1 (+1 for cumulative)
-    int _indexEmissivity;       // numLambda + 2 (+2 for 'outside' bins)
-    int _indexLineEmissivity;   // numLines
+    int _indexAbundances{0};       // numIons
+    int _indexThermalVelocity{0};  // numAtoms
+    int _indexKappaAbs{0};         // numLambda
+    int _indexKappaSca{0};         // numLambda (only if _numElec > 0)
+    int _indexKappaScaCum{0};      // numLambda x (_numElec-1) (only if _numElec > 0)
+    int _indexEmissivity{0};       // numLambda
+    int _indexLineEmissivity{0};   // numLines
 
     CloudyConfig _cloudyConfig;
-    CloudyWrapper _cloudyWrapper;
+    CloudyWrapper* _cloudyWrapper{nullptr};
 
-    DisjointWavelengthGrid* _opticalWavelengthGrid;
+    DisjointWavelengthGrid* _opticalWavelengthGrid{nullptr};
 
     // compton-electron scattering helpers depending on the configured implementation
     ElectronScatteringHelper::Helper* _com{nullptr};
 };
+
+////////////////////////////////////////////////////////////////////
 
 #endif

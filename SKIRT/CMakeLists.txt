@@ -8,10 +8,12 @@
 # ------------------------------------------------------------------
 
 # add all relevant subdirectories; each subdirectory defines a single target
+add_subdirectory(cloudy)
 add_subdirectory(field)
 add_subdirectory(fitsio)
 add_subdirectory(geometry)
 add_subdirectory(grain)
+add_subdirectory(hnsw)
 add_subdirectory(instrument)
 add_subdirectory(material)
 add_subdirectory(medium)
@@ -25,5 +27,3 @@ add_subdirectory(tools)
 add_subdirectory(utils)
 add_subdirectory(voro)
 add_subdirectory(wavelength)
-add_subdirectory(hnsw)
-add_subdirectory(cloudy)
