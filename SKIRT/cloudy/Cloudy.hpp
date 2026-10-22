@@ -70,6 +70,10 @@ public:
         already have been resized. Throws a FatalError on any failure. */
     void run(const Input& input, Output& output) const;
 
+    /** Removes the files that a run writes in the directory \em runPath (input, output and save
+        files, as named in the input template), and no other files. Missing files are ignored. */
+    static void removeRunFiles(const string& runPath);
+
 private:
     void createInput(const Input& input) const;
     void createSim(const Input& input) const;

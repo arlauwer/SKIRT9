@@ -13,6 +13,11 @@
 
 namespace
 {
+    // the files that a run writes in its directory: the input files, Cloudy's standard output, and the save files
+    // requested by the input template
+    const char* const runFileNames[] = {"sim.in",      "sed.in",   "sim.out",  "sim.ovr",
+                                        "sim.species", "sim.opac", "sim.emis", "sim.lines"};
+
     // returns the tab separated fields of the given line, or throws if there are too few.
     vector<string> splitRow(const string& line, size_t minCols, const string& what)
     {
@@ -277,6 +282,13 @@ void Cloudy::readLines(Output& output) const
     {
         output.linev[i] = StringUtils::toDouble(cols[i + 1]) * 1e-1;  // ergs/s/cm3 -> W/m3
     }
+}
+
+////////////////////////////////////////////////////////////////////
+
+void Cloudy::removeRunFiles(const string& runPath)
+{
+    for (const char* name : runFileNames) System::removeFile(StringUtils::joinPaths(runPath, name));
 }
 
 ////////////////////////////////////////////////////////////////////

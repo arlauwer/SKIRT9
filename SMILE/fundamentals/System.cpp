@@ -516,6 +516,18 @@ void System::removeFile(string path)
 
 ////////////////////////////////////////////////////////////////////
 
+void System::removeEmptyDir(string path)
+{
+    // both system calls refuse to remove a directory that is not empty
+#ifdef _WIN64
+    RemoveDirectoryW(toUTF16(path).get());
+#else
+    rmdir(path.c_str());
+#endif
+}
+
+////////////////////////////////////////////////////////////////////
+
 namespace
 {
     // This function returns the names for all regular files or directories residing in the given directory

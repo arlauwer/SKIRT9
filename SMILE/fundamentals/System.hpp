@@ -136,6 +136,12 @@ public:
         by backward slashes. */
     static void removeFile(string path);
 
+    /** This function removes the directory with the specified path if it is empty. It does
+        nothing if the directory does not exist, is not empty, or can't be removed; in particular,
+        it never removes any files or subdirectories. On Windows the function replaces forward
+        slashes in the path by backward slashes. */
+    static void removeEmptyDir(string path);
+
     /** This function returns the names for all regular files residing in the given directory,
         specified as an absolute or relative path without trailing slash, or the empty string for
         the current directory. On Windows the function replaces forward slashes in the path by
