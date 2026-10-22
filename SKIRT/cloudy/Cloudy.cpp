@@ -117,8 +117,13 @@ void Cloudy::createInput(const Input& input) const
 
 void Cloudy::createSim(const Input& input) const
 {
-    double hden = input.hden * 1e-6;                                         // 1/m3 -> 1/cm3
-    double ins = 4. * M_PI * (input.radv * _config.rad.widthv).sum() * 1e3;  // W/m2 -> erg/s/cm2
+    // the intensity is integrated over the same floored field as written to the SED file, so that the Cloudy input
+    // depends only on the floored field (as does the lookup table point), and is positive even for a zero field
+    Array radv(_config.rad.numBins);
+    for (int i = 0; i < _config.rad.numBins; i++) radv[i] = max(input.radv[i], _config.rad.minFlux);
+
+    double hden = input.hden * 1e-6;                                   // 1/m3 -> 1/cm3
+    double ins = 4. * M_PI * (radv * _config.rad.widthv).sum() * 1e3;  // W/m2 -> erg/s/cm2
 
     string contents = _template;
     contents = StringUtils::replace(contents, "{hden}", StringUtils::toString(hden));
