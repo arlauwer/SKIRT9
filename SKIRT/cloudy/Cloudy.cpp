@@ -122,8 +122,9 @@ void Cloudy::createInput(const Input& input) const
 
 void Cloudy::createSim(const Input& input) const
 {
-    // the intensity is integrated over the same floored field as written to the SED file, so that the Cloudy input
-    // depends only on the floored field (as does the lookup table point), and is positive even for a zero field
+    // the intensity command sets the level of the spectrum to the total intensity 4 pi J = 4 pi sum(J_lambda dlambda);
+    // it is integrated over the same floored field as written to the SED file, so that the Cloudy input depends only
+    // on the floored field (as does the lookup table point), and is positive even for a zero field
     Array radv(_config.rad.numBins);
     for (int i = 0; i < _config.rad.numBins; i++) radv[i] = max(input.radv[i], _config.rad.minFlux);
 
@@ -147,20 +148,22 @@ void Cloudy::createSim(const Input& input) const
 
 void Cloudy::createSed(const Input& input) const
 {
-    // SKIRT has radv (4pi W/m2/m) and Cloudy wants Jlambda (~W/m2/m), so no conversion is needed.
-    // Each bin is written as a flat segment between its two edges, nudged apart so that the
-    // edges of neighbouring bins do not coincide.
+    // The SED file only sets the shape of the spectrum, because the intensity command in the input file sets its
+    // level (see createSim()), so the mean intensity J_lambda (W/m2/m/sr) is written without conversion. Cloudy
+    // expects ascending energy, so the bins are written in reverse order (they are in descending energy). Each bin
+    // is written as a flat segment between its two edges, nudged inwards so that the edges of neighbouring bins do
+    // not coincide.
     string path = localPath("sed.in");
     std::ofstream sed = openOutput(path);
 
-    for (int i = 0; i < _config.rad.numBins; i++)
+    for (int i = _config.rad.numBins - 1; i >= 0; i--)
     {
-        double left = _config.rad.borderv[i] * 0.9999;
-        double right = _config.rad.borderv[i + 1] * 1.00001;
+        double low = _config.rad.borderv[i + 1] * 1.00001;
+        double high = _config.rad.borderv[i] * 0.9999;
         double flux = max(input.radv[i], _config.rad.minFlux);
 
-        sed << left << "\t" << flux << (i == 0 ? " Flambda" : "") << "\n";
-        sed << right << "\t" << flux << "\n";
+        sed << low << "\t" << flux << (i == _config.rad.numBins - 1 ? " Flambda" : "") << "\n";
+        sed << high << "\t" << flux << "\n";
     }
 
     closeChecked(sed, path);

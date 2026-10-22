@@ -95,7 +95,7 @@ class XRayCloudyGasMix : public EmittingGasMix
 
         PROPERTY_STRING(tableDirectory, "path to the Cloudy table directory (relative to the output directory)")
 
-        PROPERTY_DOUBLE(radMin, "minimum value of radiation field (W/m2/m)")
+        PROPERTY_DOUBLE(radMin, "minimum value of the mean intensity of the radiation field (W/m2/m/sr)")
         ATTRIBUTE_DEFAULT_VALUE(radMin, "1e-5")
         ATTRIBUTE_MIN_VALUE(radMin, "]0")
 

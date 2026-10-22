@@ -99,7 +99,7 @@ class NNIndex;
       - <tt>weights w_n w_Z w_J</tt>: the coordinate weights (see above);
       - <tt>ions I</tt>: the number of ion abundances in a record (495 for XRayCloudyGasMix);
       - <tt>lines L</tt>: the number of line emissivities in a record;
-      - <tt>minimum-flux F</tt>: the floor for the radiation field, in W/m2/m;
+      - <tt>minimum-flux F</tt>: the floor for the radiation field, in W/m2/m/sr;
       - <tt>radiation-bins N</tt>, followed by N+1 lines with the bin borders in Ry, in the order
         of the bins (for XRayCloudyGasMix, the radiation field wavelength grid in ascending
         wavelength, i.e. descending energy);
@@ -130,7 +130,7 @@ class NNIndex;
     - offset 0: \f$w_n \log_{10} n_\mathrm{H}\f$;
     - offset 1: \f$w_Z Z\f$, with metallicity \f$Z\f$ relative to solar;
     - offsets 2 to D-1: \f$(w_J/N) \log_{10} \max(J_i, F)\f$ for the radiation bins
-      \f$i=1\dots N\f$, in the order of table.txt, with \f$J_i\f$ in W/m2/m;
+      \f$i=1\dots N\f$, in the order of table.txt, with \f$J_i\f$ in W/m2/m/sr (mean intensity);
     - offset D: the gas temperature in K (not scaled with density);
     - offsets D+1 to D+I: the ion abundances divided by \f$n_\mathrm{H}\f$ (dimensionless), indexed
       as \f$Z(Z+1)/2+N-1\f$ for the ion with atomic number Z and N electrons (H+1, H+0, He+2, ...);

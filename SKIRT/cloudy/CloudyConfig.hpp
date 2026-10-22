@@ -25,7 +25,7 @@ struct CloudyConfig
         int numBins{0};
         Array borderv;       // Ry, size numBins+1, same order as the bins (i.e. descending energy)
         Array widthv;        // m, size numBins
-        double minFlux{0.};  // W/m2/m, floor used to avoid zeros in the SED file
+        double minFlux{0.};  // W/m2/m/sr, floor used to avoid zeros in the SED file
     };
 
     /** The wavelength grid on which Cloudy reports opacities and emissivities, which must match

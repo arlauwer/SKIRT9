@@ -44,7 +44,7 @@ public:
     {
         double hden{0.};   // 1/m3
         double metal{0.};  // relative to solar
-        Array radv;        // W/m2/m, one value per radiation bin
+        Array radv;        // W/m2/m/sr, mean intensity J_lambda, one value per radiation bin
     };
 
     /** Run results, in SKIRT (SI) units. */
