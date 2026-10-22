@@ -217,21 +217,21 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     _index->add(&point[0], label);
     lock.unlock();
 
+    // the promise must be fulfilled on every path, because threads waiting for this run would otherwise never wake up
     Cloudy::Output output;
     try
     {
         run(input, output);
+        Cloudy::Output normalized = output;
+        scale(normalized, 1. / input.hden);
+        entry.storage = recordFor(point, normalized);
+        entry.record = entry.storage.data();
     }
     catch (...)
     {
         entry.promise.set_exception(std::current_exception());
         throw;
     }
-
-    Cloudy::Output normalized = output;
-    scale(normalized, 1. / input.hden);
-    entry.storage = recordFor(point, normalized);
-    entry.record = entry.storage.data();
     entry.promise.set_value();
 
     lock.lock();
