@@ -25,7 +25,9 @@
 
     <b>Cloudy runs and the lookup table</b>
 
-    The Cloudy runs are performed in subdirectories of the configured table directory. The
+    The Cloudy runs are performed in subdirectories of the configured table directory, which
+    must exist or have an existing parent directory. A relative table directory path is
+    interpreted relative to the output directory of the simulation. The
     \em tableMode property determines how the results are obtained. In \em Direct mode, Cloudy
     is invoked for every cell and nothing is stored. In \em Record mode, Cloudy is invoked for
     every cell as well, and the results of all runs are stored in a persistent lookup table in the
@@ -91,7 +93,7 @@ class XRayCloudyGasMix : public EmittingGasMix
         PROPERTY_STRING(cloudyExecPath, "path to cloudy executable")
         ATTRIBUTE_DEFAULT_VALUE(cloudyExecPath, "/usr/local/bin/cloudy")
 
-        PROPERTY_STRING(tableDirectory, "path to the cloudy table directory")
+        PROPERTY_STRING(tableDirectory, "path to the Cloudy table directory (relative to the output directory)")
 
         PROPERTY_DOUBLE(radMin, "minimum value of radiation field (W/m2/m)")
         ATTRIBUTE_DEFAULT_VALUE(radMin, "1e-5")
@@ -276,6 +278,7 @@ private:
     int _indexEmissivity{0};       // numLambda
     int _indexLineEmissivity{0};   // numLines
 
+    string _tablePath;  // the table directory, resolved relative to the output directory
     CloudyConfig _cloudyConfig;
     CloudyWrapper* _cloudyWrapper{nullptr};
 

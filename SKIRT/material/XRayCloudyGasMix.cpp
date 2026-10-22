@@ -128,19 +128,23 @@ void XRayCloudyGasMix::setupSelfBefore()
     if (tableMode() == TableMode::Lookup && interpolationDistance() < matchDistance())
         throw FATALERROR("The interpolation distance must not be smaller than the match distance");
 
+    // a relative table directory is relative to the output directory, independent of the current directory
+    _tablePath = tableDirectory();
+    if (!StringUtils::isAbsolutePath(_tablePath))
+        _tablePath = StringUtils::joinPaths(find<FilePaths>()->outputPath(), _tablePath);
+
     // each process uses its own run directories
-    if (!System::makeDir(tableDirectory()))
-        throw FATALERROR("Could not create the Cloudy table directory: " + tableDirectory());
+    if (!System::makeDir(_tablePath)) throw FATALERROR("Could not create the Cloudy table directory: " + _tablePath);
     string runsName = ProcessManager::isMultiProc() ? "runs_" + StringUtils::toString(ProcessManager::rank()) : "runs";
-    string runsPath = StringUtils::joinPaths(tableDirectory(), runsName);
+    string runsPath = StringUtils::joinPaths(_tablePath, runsName);
 
     _cloudyWrapper = new CloudyWrapper;
-    _cloudyWrapper->setup(_cloudyConfig, FilePaths::resource("XRayCloudyGasMix_template.in"), tableDirectory(),
-                          runsPath, lookup);
+    _cloudyWrapper->setup(_cloudyConfig, FilePaths::resource("XRayCloudyGasMix_template.in"), _tablePath, runsPath,
+                          lookup);
 
     if (_cloudyWrapper->usesTable())
         find<Log>()->info("Loaded Cloudy lookup table with " + std::to_string(_cloudyWrapper->tableSize())
-                          + " runs from " + tableDirectory());
+                          + " runs from " + _tablePath);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -389,7 +393,7 @@ bool XRayCloudyGasMix::isSpecificStateConverged(int numCells, int numUpdated, in
         if (ProcessManager::isRoot() && _cloudyWrapper->save())
         {
             log->info("  Saved Cloudy lookup table with " + std::to_string(_cloudyWrapper->tableSize()) + " runs to "
-                      + tableDirectory());
+                      + _tablePath);
         }
     }
 
