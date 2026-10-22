@@ -121,7 +121,8 @@ class NNIndex;
       starting at zero. This file is a cache that is rebuilt from the records when it is missing or
       inconsistent; external tools can ignore it.
     - <tt>runs</tt> (or <tt>runs_P</tt> for process P in a multi-process run): the Cloudy run
-      directories, which are not part of the table.
+      directories, which are not part of the table and are removed at the end of a simulation
+      unless a Cloudy run failed.
 
     Each record holds the following values, where the offset is the index of the first value in
     the record (counted in doubles), \f$n_\mathrm{H}\f$ is the hydrogen density of the run in
@@ -178,7 +179,8 @@ public:
 
     /** Sets up the wrapper. The function loads the Cloudy input template from \em templatePath,
         creates the directory \em runsPath for the Cloudy run directories (its parent directory
-        must exist), and, in record or lookup mode, creates the table directory
+        must exist; the directory is removed again by the destructor unless a Cloudy run failed),
+        and, in record or lookup mode, creates the table directory
         \em tablePath or loads the table it contains. Throws a FatalError on any failure. */
     void setup(const CloudyConfig& config, string templatePath, string tablePath, string runsPath,
                const LookupOptions& lookup);
@@ -305,6 +307,9 @@ private:
     std::atomic<size_t> _numRuns{0};
     std::atomic<size_t> _numMatches{0};
     std::atomic<size_t> _numInterpolations{0};
+
+    // true if a Cloudy run failed, in which case the run directories are kept
+    std::atomic<bool> _runFailed{false};
 };
 
 ////////////////////////////////////////////////////////////////////

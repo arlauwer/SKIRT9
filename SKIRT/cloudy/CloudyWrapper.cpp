@@ -13,6 +13,11 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#ifdef _WIN64
+#    include <direct.h>
+#else
+#    include <unistd.h>
+#endif
 
 ////////////////////////////////////////////////////////////////////
 
@@ -77,6 +82,16 @@ namespace
         if (std::rename(from.c_str(), to.c_str()) != 0) throw FATALERROR("Could not rename " + from + " to " + to);
     }
 
+    // removes an empty directory, ignoring failures
+    void removeEmptyDir(const string& path)
+    {
+#ifdef _WIN64
+        _rmdir(path.c_str());
+#else
+        rmdir(path.c_str());
+#endif
+    }
+
     template<typename T> void writeValue(std::ofstream& out, T value)
     {
         out.write(reinterpret_cast<const char*>(&value), sizeof(T));
@@ -97,6 +112,19 @@ CloudyWrapper::CloudyWrapper() {}
 CloudyWrapper::~CloudyWrapper()
 {
     for (const string& path : _mappedPaths) System::releaseMemoryMap(path);
+
+    // remove the run directories, which only hold scratch files, unless a run failed and they may help diagnose it
+    if (!_runFailed && !_runsPath.empty())
+    {
+        for (size_t slot = 0; slot != _slotInUse.size(); ++slot)
+        {
+            string runPath = StringUtils::joinPaths(_runsPath, StringUtils::toString(static_cast<int>(slot)));
+            for (const string& name : System::filesInDirectory(runPath))
+                System::removeFile(StringUtils::joinPaths(runPath, name));
+            removeEmptyDir(runPath);
+        }
+        removeEmptyDir(_runsPath);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -360,7 +388,15 @@ void CloudyWrapper::run(const Cloudy::Input& input, Cloudy::Output& output)
 
     string runPath = StringUtils::joinPaths(_runsPath, StringUtils::toString(guard.slot));
     Cloudy cloudy(runPath, _template, _config, _species);
-    cloudy.run(input, output);
+    try
+    {
+        cloudy.run(input, output);
+    }
+    catch (...)
+    {
+        _runFailed = true;
+        throw;
+    }
     _numRuns++;
 }
 
