@@ -172,9 +172,9 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     vector<NNIndex::Neighbor> neighbors;
     if (_lookup.mode == LookupOptions::Mode::Lookup) neighbors = _index->search(&point[0], _lookup.numNeighbors);
 
-    // reuse the nearest run if it is close enough; a distance so small that its inverse overflows is treated as a
-    // match as well, so that the interpolation weights below are always finite
-    if (!neighbors.empty() && (neighbors[0].first <= _lookup.matchDistance || !std::isfinite(1. / neighbors[0].first)))
+    // reuse the nearest run if it is close enough; since matchDistance >= 0, this includes a distance of zero, so that
+    // all distances used in the interpolation weights below are positive
+    if (!neighbors.empty() && neighbors[0].first <= _lookup.matchDistance)
     {
         const Entry& entry = _entries[neighbors[0].second];
         auto ready = entry.ready;
@@ -202,7 +202,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
         }
         lock.unlock();
 
-        // inverse-distance weighting; all distances exceed the match distance and have a finite inverse (see above)
+        // inverse-distance weighting; all distances exceed the match distance and are thus positive (see above)
         Cloudy::Output output;
         output.resize(_config);
         double sumWeights = 0.;
