@@ -156,8 +156,9 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
     std::unique_lock<std::mutex> lock(_mutex);
     auto neighbors = _index->search(&point[0], _lookup.numNeighbors);
 
-    // reuse the nearest run if it is close enough
-    if (!neighbors.empty() && neighbors[0].first <= _lookup.matchDistance)
+    // reuse the nearest run if it is close enough; a distance so small that its inverse overflows is treated as a
+    // match as well, so that the interpolation weights below are always finite
+    if (!neighbors.empty() && (neighbors[0].first <= _lookup.matchDistance || !std::isfinite(1. / neighbors[0].first)))
     {
         const Entry& entry = _entries[neighbors[0].second];
         auto ready = entry.ready;
@@ -185,7 +186,7 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
         }
         lock.unlock();
 
-        // inverse-distance weighting; all distances exceed the match distance and are thus positive
+        // inverse-distance weighting; all distances exceed the match distance and have a finite inverse (see above)
         Cloudy::Output output;
         output.resize(_config);
         double sumWeights = 0.;
