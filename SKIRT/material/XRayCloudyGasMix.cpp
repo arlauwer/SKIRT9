@@ -19,6 +19,7 @@
 #include "System.hpp"
 #include "TextInFile.hpp"
 #include "UpdateStatus.hpp"
+#include <unordered_set>
 
 ////////////////////////////////////////////////////////////////////
 
@@ -26,6 +27,9 @@ namespace
 {
     constexpr int numAtoms = 30;
     constexpr int numIons = 495;
+
+    using IonicCrossSections::nonZeroRange;
+    using IonicCrossSections::wavelengthToFromEnergy;
 
     // returns the thermal velocity for the given temperature and particle mass
     double vtherm(double T, double mass)
@@ -80,13 +84,8 @@ void XRayCloudyGasMix::setupSelfBefore()
     vector<double> borderv(std::begin(borders), std::end(borders));
     _opticalWavelengthGrid = new ListBorderWavelengthGrid(this, borderv, true, true);
 
-    // load the emission lines
-    TextInFile linesFile(this, "XRayCloudyGasMix_lines.dat", "Cloudy lines", true);
-    linesFile.addColumn("mass", "mass", "amu");
-    linesFile.addColumn("center", "wavelength", "Angstrom");
-    auto lines = linesFile.readAllColumns();
-    _lineMassv = lines[0];
-    _lineCenterv = lines[1];
+    // calculate the cross sections on the Cloudy wavelength grid
+    setupCrossSections();
 
     // configure Cloudy
     _cloudyConfig.rad.numBins = radGrid->numBins();
@@ -96,7 +95,7 @@ void XRayCloudyGasMix::setupSelfBefore()
     _cloudyConfig.wav.numBins = _opticalWavelengthGrid->numBins();
     _cloudyConfig.wav.lambdav = _opticalWavelengthGrid->lambdav();
     _cloudyConfig.numIons = numIons;
-    _cloudyConfig.numLines = _lineCenterv.size();
+    _cloudyConfig.numLines = 0;
     _cloudyConfig.ionIndex = [](const string& name) {
         auto ion = AtomUtils::parseIon(name);
         return AtomUtils::ionIndex(ion.first, ion.second);
@@ -149,6 +148,71 @@ void XRayCloudyGasMix::setupSelfBefore()
 
 ////////////////////////////////////////////////////////////////////
 
+void XRayCloudyGasMix::setupCrossSections()
+{
+    int numBins = _opticalWavelengthGrid->numBins();
+    const Array& lambdav = _opticalWavelengthGrid->lambdav();
+
+    // the photon energy (eV) at the characteristic wavelength of each bin
+    _energyv.resize(numBins);
+    for (int ell = 0; ell < numBins; ell++) _energyv[ell] = wavelengthToFromEnergy(lambdav[ell]);
+
+    // load the photo-absorption and fluorescence data for all ions
+    std::unordered_set<int> ionSet;
+    for (int i = 0; i < numIons; i++) ionSet.insert(i);
+    auto paResources = IonicCrossSections::loadPhotoAbsorption(this, ionSet);
+    auto fluoResources = IonicCrossSections::loadFluorescence(this, ionSet);
+
+    // the photo-absorption cross section, summed over the subshells of each ion
+    _sigmaAbsvv.resize(numIons);
+    _sigmaFluvv.resize(numIons);
+    _subshellvv.resize(numIons);
+    for (const auto& paRes : paResources)
+    {
+        int i = AtomUtils::ionIndex(paRes.Z, paRes.N);
+        auto& sigmaAbsv = _sigmaAbsvv[i];
+        if (sigmaAbsv.size() == 0) sigmaAbsv.resize(numBins);
+        for (int ell = 0; ell < numBins; ell++) sigmaAbsv[ell] += paRes.photoAbsorbSection(_energyv[ell]);
+
+        // gather the fluorescence lines that may follow a vacancy in this subshell
+        vector<double> yields;
+        int firstLine = _fluoLinev.size();
+        for (const auto& fluoRes : fluoResources)
+        {
+            if (fluoRes.Z == paRes.Z && fluoRes.N == paRes.N && fluoRes.n == paRes.n && fluoRes.l == paRes.l
+                && fluoRes.omega > 0.)
+            {
+                _fluoLinev.push_back({fluoRes.Z, wavelengthToFromEnergy(fluoRes.E), fluoRes.E, fluoRes.W / 2.});
+                yields.push_back(fluoRes.omega);
+            }
+        }
+        if (yields.empty()) continue;
+
+        // store the subshell with its line distribution, which does not depend on wavelength or cell
+        Subshell subshell{paRes, 0., firstLine, Array()};
+        subshell.yield = NR::cdf(subshell.cumLinev, Array(yields.data(), yields.size()));
+        _subshellvv[i].push_back(subshell);
+
+        // the fluorescence part of the cross section, i.e. the cross section times the total yield
+        auto& sigmaFluv = _sigmaFluvv[i];
+        if (sigmaFluv.size() == 0) sigmaFluv.resize(numBins);
+        for (int ell = 0; ell < numBins; ell++)
+            sigmaFluv[ell] += paRes.photoAbsorbSection(_energyv[ell]) * subshell.yield;
+    }
+
+    // the Compton cross section per electron
+    if (_numElec > 0)
+    {
+        _sigmaElecv.resize(numBins);
+        for (int ell = 0; ell < numBins; ell++) _sigmaElecv[ell] = _com->sectionSca(lambdav[ell], 1, 1);
+    }
+
+    find<Log>()->info("Loaded photo-absorption data for " + std::to_string(paResources.size())
+                      + " subshells and " + std::to_string(_fluoLinev.size()) + " fluorescence lines");
+}
+
+////////////////////////////////////////////////////////////////////
+
 XRayCloudyGasMix::~XRayCloudyGasMix()
 {
     delete _com;
@@ -160,35 +224,6 @@ XRayCloudyGasMix::~XRayCloudyGasMix()
 int XRayCloudyGasMix::indexForLambda(double lambda) const
 {
     return NR::locateFail(_opticalWavelengthGrid->borderv(), lambda);
-}
-
-////////////////////////////////////////////////////////////////////
-
-Array XRayCloudyGasMix::getKappaScaCum(const MaterialState* state, int ell) const
-{
-    Array kappaScaCum(_numElec + 1);
-    kappaScaCum[0] = 0;
-    for (int e = 0; e < _numElec - 1; e++)
-    {
-        int index = _indexKappaScaCum + ell * (_numElec - 1) + e;
-        kappaScaCum[e + 1] = state->custom(index);
-    }
-    kappaScaCum[_numElec] = 1;
-
-    return kappaScaCum;
-}
-
-////////////////////////////////////////////////////////////////////
-
-void XRayCloudyGasMix::setKappaScaCum(MaterialState* state, int ell, const Array& kappaScaCum) const
-{
-    // kappaScaCum[0] = 0 by definition
-    for (int e = 0; e < _numElec - 1; e++)
-    {
-        int index = _indexKappaScaCum + ell * (_numElec - 1) + e;
-        state->setCustom(index, kappaScaCum[e + 1]);
-    }
-    // kappaScaCum[_numElec] = 1 by definition
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -228,14 +263,14 @@ bool XRayCloudyGasMix::hasScatteringDispersion() const
 
 ////////////////////////////////////////////////////////////////////
 
-bool XRayCloudyGasMix::hasContinuumEmission() const
+bool XRayCloudyGasMix::scatteringEmulatesSecondaryEmission() const
 {
     return true;
 }
 
 ////////////////////////////////////////////////////////////////////
 
-bool XRayCloudyGasMix::hasLineEmission() const
+bool XRayCloudyGasMix::hasContinuumEmission() const
 {
     return true;
 }
@@ -248,12 +283,14 @@ bool XRayCloudyGasMix::hasLineEmission() const
 #define getVTherm(a) custom(_indexThermalVelocity + (a))
 #define setKappaAbs(ell, value) setCustom(_indexKappaAbs + (ell), (value))
 #define getKappaAbs(ell) custom(_indexKappaAbs + (ell))
-#define setKappaSca(ell, value) setCustom(_indexKappaSca + (ell), (value))
-#define getKappaSca(ell) custom(_indexKappaSca + (ell))
+#define setKappaFlu(ell, value) setCustom(_indexKappaFlu + (ell), (value))
+#define getKappaFlu(ell) custom(_indexKappaFlu + (ell))
+#define setElectronDensity(value) setCustom(_indexElectronDensity, (value))
+#define getElectronDensity() custom(_indexElectronDensity)
+#define setElementCum(a, value) setCustom(_indexElementCum + (a), (value))
+#define getElementCum(a) custom(_indexElementCum + (a))
 #define setEmissivity(ell, value) setCustom(_indexEmissivity + (ell), (value))
 #define getEmissivity(ell) custom(_indexEmissivity + (ell))
-#define setLineEmissivity(ell, value) setCustom(_indexLineEmissivity + (ell), (value))
-#define getLineEmissivity(ell) custom(_indexLineEmissivity + (ell))
 
 ////////////////////////////////////////////////////////////////////
 
@@ -264,9 +301,16 @@ double XRayCloudyGasMix::kappaAbs(const MaterialState* state, int ell) const
 
 ////////////////////////////////////////////////////////////////////
 
-double XRayCloudyGasMix::kappaSca(const MaterialState* state, int ell) const
+double XRayCloudyGasMix::kappaElec(const MaterialState* state, int ell) const
 {
-    return ell >= 0 && _numElec > 0 ? state->getKappaSca(ell) : 0.;
+    return ell >= 0 && _numElec > 0 ? state->getElectronDensity() * _sigmaElecv[ell] : 0.;
+}
+
+////////////////////////////////////////////////////////////////////
+
+double XRayCloudyGasMix::kappaFlu(const MaterialState* state, int ell) const
+{
+    return ell >= 0 ? state->getKappaFlu(ell) : 0.;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -276,14 +320,12 @@ vector<StateVariable> XRayCloudyGasMix::specificStateVariableInfo() const
     vector<StateVariable> result{StateVariable::numberDensity(), StateVariable::temperature(),
                                  StateVariable::metallicity()};
 
-    // To save memory here, we could have some system that allows to only allocate memory for non-empty cells.
-    // I.e. have these state variables for only cells with non-zero number density.
-    // would have to adjust the MediumState class to support this
-
     // next available custom variable index
     int index = 0;
+    auto self = const_cast<XRayCloudyGasMix*>(this);
+    int numBins = _cloudyConfig.wav.numBins;
 
-    const_cast<XRayCloudyGasMix*>(this)->_indexAbundances = index;
+    self->_indexAbundances = index;
     for (int i = 0; i < numIons; i++)
     {
         const auto& ion = _ionParamv[i];
@@ -292,43 +334,41 @@ vector<StateVariable> XRayCloudyGasMix::specificStateVariableInfo() const
         result.push_back(StateVariable::custom(index++, name + " abundance", "numbervolumedensity"));
     }
 
-    const_cast<XRayCloudyGasMix*>(this)->_indexThermalVelocity = index;
+    self->_indexThermalVelocity = index;
     for (int a = 0; a < numAtoms; a++)
     {
         string Z = StringUtils::toString(a + 1);
         result.push_back(StateVariable::custom(index++, "thermal velocity for Z=" + Z, "velocity"));
     }
 
-    const_cast<XRayCloudyGasMix*>(this)->_indexKappaAbs = index;
-    for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
+    self->_indexKappaAbs = index;
+    for (int ell = 0; ell < numBins; ell++)
     {
         string lambda = StringUtils::toString(_cloudyConfig.wav.lambdav[ell]);
         result.push_back(StateVariable::custom(index++, "absorption opacity at lambda=" + lambda + " m", "opacity"));
     }
 
-    if (_numElec > 0)
+    self->_indexKappaFlu = index;
+    for (int ell = 0; ell < numBins; ell++)
     {
-        const_cast<XRayCloudyGasMix*>(this)->_indexKappaSca = index;
-        for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
-        {
-            string lambda = StringUtils::toString(_cloudyConfig.wav.lambdav[ell]);
-            result.push_back(
-                StateVariable::custom(index++, "scattering opacity at lambda=" + lambda + " m", "opacity"));
-        }
-
-        const_cast<XRayCloudyGasMix*>(this)->_indexKappaScaCum = index;
-        for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
-            for (int e = 0; e < _numElec - 1; e++)
-                result.push_back(StateVariable::custom(index++, "cumulative scattering probability", "1"));
+        string lambda = StringUtils::toString(_cloudyConfig.wav.lambdav[ell]);
+        result.push_back(
+            StateVariable::custom(index++, "fluorescence opacity at lambda=" + lambda + " m", "opacity"));
     }
 
-    const_cast<XRayCloudyGasMix*>(this)->_indexEmissivity = index;
-    for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
-        result.push_back(StateVariable::custom(index++, "volume emissivity", "powervolumedensity"));
+    if (_numElec > 0)
+    {
+        self->_indexElectronDensity = index;
+        result.push_back(StateVariable::custom(index++, "density of scattering electrons", "numbervolumedensity"));
 
-    const_cast<XRayCloudyGasMix*>(this)->_indexLineEmissivity = index;
-    for (int l = 0; l < _cloudyConfig.numLines; l++)
-        result.push_back(StateVariable::custom(index++, "line emissivity", "bolluminosityvolumedensity"));
+        self->_indexElementCum = index;
+        for (int a = 0; a < _numElec - 1; a++)
+            result.push_back(StateVariable::custom(index++, "cumulative electron scattering probability", ""));
+    }
+
+    self->_indexEmissivity = index;
+    for (int ell = 0; ell < numBins; ell++)
+        result.push_back(StateVariable::custom(index++, "volume emissivity", "wavelengthmonluminosityvolumedensity"));
 
     return result;
 }
@@ -439,7 +479,8 @@ double XRayCloudyGasMix::opacityAbs(double lambda, const MaterialState* state, c
 
 double XRayCloudyGasMix::opacitySca(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
-    return kappaSca(state, indexForLambda(lambda));
+    int ell = indexForLambda(lambda);
+    return kappaElec(state, ell) + kappaFlu(state, ell);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -447,7 +488,7 @@ double XRayCloudyGasMix::opacitySca(double lambda, const MaterialState* state, c
 double XRayCloudyGasMix::opacityExt(double lambda, const MaterialState* state, const PhotonPacket* /*pp*/) const
 {
     int ell = indexForLambda(lambda);
-    return kappaAbs(state, ell) + kappaSca(state, ell);
+    return kappaAbs(state, ell) + kappaElec(state, ell) + kappaFlu(state, ell);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -461,11 +502,71 @@ void XRayCloudyGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* s
 
         // scattering only happens inside the wavelength grid, but clip to be safe
         int ell = NR::locateClip(_opticalWavelengthGrid->borderv(), lambda);
-        Array kappaScaCum = getKappaScaCum(state, ell);
 
-        scatinfo->species = NR::locateClip(kappaScaCum, random()->uniform());
-        int a = scatinfo->species;
-        scatinfo->velocity = state->getVTherm(a) * random()->maxwell();
+        // choose between electron scattering and fluorescence in proportion to their opacities
+        double kappaElecValue = kappaElec(state, ell);
+        double kappaFluValue = kappaFlu(state, ell);
+        if (kappaFluValue <= 0. || random()->uniform() * (kappaElecValue + kappaFluValue) < kappaElecValue)
+        {
+            // electron scattering: choose the atom whose electrons scatter, which determines the thermal velocity
+            Array elementCum(_numElec + 1);
+            for (int a = 1; a < _numElec; a++) elementCum[a] = state->getElementCum(a - 1);
+            elementCum[_numElec] = 1.;
+
+            int a = NR::locateClip(elementCum, random()->uniform());
+            scatinfo->species = a;
+            scatinfo->velocity = state->getVTherm(a) * random()->maxwell();
+        }
+        else
+        {
+            // fluorescence: choose the ion in proportion to its fluorescence opacity, falling back to the last
+            // contributing ion should round-off errors exhaust the total
+            double x = random()->uniform() * kappaFluValue;
+            int ion = -1;
+            for (int i = 0; i < numIons; i++)
+            {
+                if (_sigmaFluvv[i].size() == 0) continue;
+                double kappa = state->getAbundance(i) * _sigmaFluvv[i][ell];
+                if (kappa <= 0.) continue;
+                ion = i;
+                x -= kappa;
+                if (x < 0.) break;
+            }
+            if (ion < 0) throw FATALERROR("No ion contributes to the fluorescence opacity");
+
+            // choose the subshell in proportion to its cross section times its total yield, as in the fluorescence
+            // cross section, and then the line from the distribution of the subshell
+            const auto& subshells = _subshellvv[ion];
+            double E = _energyv[ell];
+            Array weights(subshells.size());
+            for (size_t s = 0; s != subshells.size(); ++s)
+                weights[s] = subshells[s].pa.photoAbsorbSection(E) * subshells[s].yield;
+            Array cumWeights;
+            NR::cdf(cumWeights, weights);
+            const auto& subshell = subshells[NR::locateClip(cumWeights, random()->uniform())];
+            int f = subshell.firstLine + NR::locateClip(subshell.cumLinev, random()->uniform());
+            const auto& line = _fluoLinev[f];
+
+            scatinfo->species = numAtoms + f;
+            scatinfo->velocity = state->getVTherm(line.Z - 1) * random()->maxwell();
+
+            if (line.width == 0.)
+            {
+                // for a zero-width line, simply copy the central wavelength
+                scatinfo->lambda = line.lambda;
+            }
+            else
+            {
+                // otherwise sample a wavelength from the Lorentz line shape in energy space; the tails of the Lorentz
+                // distribution are very long, occasionally resulting in negative energies; therefore we loop until
+                // the sampled wavelength is meaningful
+                while (true)
+                {
+                    scatinfo->lambda = wavelengthToFromEnergy(line.energy + line.width * random()->lorentz());
+                    if (nonZeroRange.contains(scatinfo->lambda)) break;
+                }
+            }
+        }
     }
 }
 
@@ -478,15 +579,21 @@ bool XRayCloudyGasMix::peeloffScattering(double& I, double& Q, double& U, double
     auto scatinfo = const_cast<PhotonPacket*>(pp)->getScatteringInfo();
     setScatteringInfoIfNeeded(scatinfo, lambda, state);
 
-    // only free electron scattering is supported
-    int Z = scatinfo->species + 1;
+    // electron scattering in the electron rest frame
+    if (scatinfo->species < numAtoms)
+    {
+        int Z = scatinfo->species + 1;
+        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
+        _com->peeloffScattering(I, Q, U, V, lambda, Z, Z, pp->direction(), bfkobs, bfky, pp);
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
+        return false;
+    }
 
-    // scattering in electron rest frame
-    lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
-    _com->peeloffScattering(I, Q, U, V, lambda, Z, Z, pp->direction(), bfkobs, bfky, pp);
-    lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfkobs, scatinfo->velocity);
-
-    return false;
+    // fluorescence: unpolarized isotropic emission; the bias weight is trivially 1 and there is no contribution to
+    // Q, U, V
+    I = 1.;
+    lambda = PhotonPacket::shiftedEmissionWavelength(scatinfo->lambda, bfkobs, scatinfo->velocity);
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -497,13 +604,25 @@ void XRayCloudyGasMix::performScattering(double lambda, const MaterialState* sta
     auto scatinfo = pp->getScatteringInfo();
     setScatteringInfoIfNeeded(scatinfo, lambda, state);
 
-    // only free electron scattering is supported
-    int Z = scatinfo->species + 1;
+    Direction bfknew;
 
-    // scattering in electron rest frame
-    lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
-    Direction bfknew = _com->performScattering(lambda, Z, Z, pp->direction(), pp);
-    lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
+    // electron scattering in the electron rest frame
+    if (scatinfo->species < numAtoms)
+    {
+        int Z = scatinfo->species + 1;
+        lambda = PhotonPacket::shiftedReceptionWavelength(lambda, pp->direction(), scatinfo->velocity);
+        bfknew = _com->performScattering(lambda, Z, Z, pp->direction(), pp);
+        lambda = PhotonPacket::shiftedEmissionWavelength(lambda, bfknew, scatinfo->velocity);
+    }
+
+    // fluorescence: unpolarized isotropic emission at the wavelength of the line, emulating secondary emission
+    else
+    {
+        pp->setUnpolarized();
+        bfknew = random()->direction();
+        lambda = PhotonPacket::shiftedEmissionWavelength(scatinfo->lambda, bfknew, scatinfo->velocity);
+        pp->setEmulatedSecondaryOrigin(state->mediumIndex());
+    }
 
     // execute the scattering event in the photon packet
     pp->scatter(bfknew, state->bulkVelocity(), lambda);
@@ -528,29 +647,6 @@ Array XRayCloudyGasMix::emissionSpectrum(const MaterialState* state, const Array
 
 ////////////////////////////////////////////////////////////////////
 
-Array XRayCloudyGasMix::lineEmissionCenters() const
-{
-    return _lineCenterv;
-}
-
-////////////////////////////////////////////////////////////////////
-
-Array XRayCloudyGasMix::lineEmissionMasses() const
-{
-    return _lineMassv;
-}
-
-////////////////////////////////////////////////////////////////////
-
-Array XRayCloudyGasMix::lineEmissionSpectrum(const MaterialState* state, const Array& /*Jv*/) const
-{
-    Array luminosities(_cloudyConfig.numLines);
-    for (int l = 0; l != _cloudyConfig.numLines; l++) luminosities[l] = state->getLineEmissivity(l);
-    return luminosities * state->volume();
-}
-
-////////////////////////////////////////////////////////////////////
-
 double XRayCloudyGasMix::indicativeTemperature(const MaterialState* state, const Array& /*Jv*/) const
 {
     return state->temperature();
@@ -560,7 +656,7 @@ double XRayCloudyGasMix::indicativeTemperature(const MaterialState* state, const
 
 void XRayCloudyGasMix::storeOutput(MaterialState* state, const Cloudy::Output& output) const
 {
-    const auto& lambdav = _opticalWavelengthGrid->lambdav();
+    int numBins = _cloudyConfig.wav.numBins;
 
     // temperature
     double temp = output.temp;
@@ -576,40 +672,52 @@ void XRayCloudyGasMix::storeOutput(MaterialState* state, const Cloudy::Output& o
     // abundances
     for (int i = 0; i < numIons; i++) state->setAbundance(i, output.abunv[i]);
 
-    // optical properties
-    for (int ell = 0; ell < _cloudyConfig.wav.numBins; ell++)
+    // photo-absorption and fluorescence opacities from the ion densities
+    Array kappaPhotov(numBins);
+    Array kappaFluv(numBins);
+    for (int i = 0; i < numIons; i++)
     {
-        // absorption and emission
-        state->setKappaAbs(ell, output.opacv[ell]);
-        state->setEmissivity(ell, output.emisv[ell]);
-
-        if (_numElec > 0)
-        {
-            // recalculate scattering with new abundances; only free electron scattering is supported,
-            // so the scattering species is the atom and all ions of the same atom are accumulated
-            Array kappaScaFractions(0., _numElec);
-            for (int i = 0; i < numIons; i++)
-            {
-                const auto& ion = _ionParamv[i];
-                kappaScaFractions[ion.Z - 1] += _com->sectionSca(lambdav[ell], ion.Z, ion.N) * output.abunv[i];
-            }
-
-            // determine the normalized cumulative probability distribution and the opacity;
-            // without scattering (e.g. an empty cell) the distribution is irrelevant but must remain finite
-            double kappaSca = kappaScaFractions.sum();
-            Array kappaScaCum;
-            if (kappaSca > 0.)
-                NR::cdf(kappaScaCum, kappaScaFractions);
-            else
-                NR::cdf(kappaScaCum, Array(1., _numElec));
-
-            state->setKappaSca(ell, kappaSca);
-            setKappaScaCum(state, ell, kappaScaCum);
-        }
+        double n = output.abunv[i];
+        if (n <= 0.) continue;
+        const Array& sigmaAbsv = _sigmaAbsvv[i];
+        if (sigmaAbsv.size() != 0)
+            for (int ell = 0; ell < numBins; ell++) kappaPhotov[ell] += n * sigmaAbsv[ell];
+        const Array& sigmaFluv = _sigmaFluvv[i];
+        if (sigmaFluv.size() != 0)
+            for (int ell = 0; ell < numBins; ell++) kappaFluv[ell] += n * sigmaFluv[ell];
     }
 
-    // emission lines
-    for (int l = 0; l < _cloudyConfig.numLines; l++) state->setLineEmissivity(l, output.linev[l]);
+    // the absorption opacity excludes the fluorescence part, which is treated as scattering; it can be negative where
+    // the total fluorescence yield exceeds unity, so that the albedo exceeds unity (as in XRayIonicGasMix)
+    for (int ell = 0; ell < numBins; ell++)
+    {
+        state->setKappaAbs(ell, kappaPhotov[ell] - kappaFluv[ell]);
+        state->setKappaFlu(ell, kappaFluv[ell]);
+        state->setEmissivity(ell, output.emisv[ell]);
+    }
+
+    // electron scattering: with free-electron scattering for all electrons, the share of each atom is independent of
+    // wavelength, so the density of the scattering electrons and the cumulative distribution over the atoms suffice
+    if (_numElec > 0)
+    {
+        Array densities(_numElec);
+        for (int i = 0; i < numIons; i++)
+        {
+            int Z = _ionParamv[i].Z;
+            densities[Z - 1] += Z * output.abunv[i];
+        }
+
+        // without electrons (e.g. an empty cell) the distribution is irrelevant but must remain finite
+        Array elementCum;
+        double density = densities.sum();
+        if (density > 0.)
+            NR::cdf(elementCum, densities);
+        else
+            NR::cdf(elementCum, Array(1., _numElec));
+
+        state->setElectronDensity(density);
+        for (int a = 1; a < _numElec; a++) state->setElementCum(a - 1, elementCum[a]);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////

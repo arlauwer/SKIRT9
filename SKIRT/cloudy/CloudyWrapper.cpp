@@ -32,7 +32,7 @@ namespace
     // header of a segment file: a 16-character identifier followed by 64-bit integers, so that the records that follow
     // are aligned on a multiple of 8 bytes
     const string segmentMagic = "SKIRTCloudyTable";
-    constexpr uint64_t segmentVersion = 2;
+    constexpr uint64_t segmentVersion = 3;  // version 3 dropped the opacities stored by version 2
     constexpr size_t numHeaderValues = 6;  // version, number of records, dims, ions, wavelengths, lines
     constexpr size_t headerSize = 16 + numHeaderValues * sizeof(uint64_t);
 
@@ -40,6 +40,12 @@ namespace
     int numDimsFor(const CloudyConfig& config)
     {
         return 2 + config.rad.numBins;
+    }
+
+    // returns the line of the table description that holds the format version
+    string versionLine(uint64_t version)
+    {
+        return "version " + std::to_string(version) + "\n";
     }
 
     // returns the full-precision representation of a double
@@ -143,7 +149,7 @@ void CloudyWrapper::setup(const CloudyConfig& config, string templatePath, strin
     if (usesTable())
     {
         if (!System::makeDir(_tablePath)) throw FATALERROR("CloudyWrapper: could not create " + _tablePath);
-        _recordSize = numDimsFor(_config) + 1 + _config.numIons + 2 * _config.wav.numBins + _config.numLines;
+        _recordSize = numDimsFor(_config) + 1 + _config.numIons + _config.wav.numBins + _config.numLines;
         _index.reset(new NNIndex(numDimsFor(_config)));
         load();
     }
@@ -218,7 +224,6 @@ Cloudy::Output CloudyWrapper::query(const Cloudy::Input& input)
 
         output.temp /= sumWeights;
         output.abunv /= sumWeights;
-        output.opacv /= sumWeights;
         output.emisv /= sumWeights;
         output.linev /= sumWeights;
         scale(output, input.hden);
@@ -428,7 +433,6 @@ Array CloudyWrapper::pointFor(const Cloudy::Input& input) const
 void CloudyWrapper::scale(Cloudy::Output& output, double hden)
 {
     output.abunv *= hden;
-    output.opacv *= hden;
     output.emisv *= hden * hden;
     output.linev *= hden * hden;
 }
@@ -437,13 +441,12 @@ void CloudyWrapper::scale(Cloudy::Output& output, double hden)
 
 vector<double> CloudyWrapper::recordFor(const Array& point, const Cloudy::Output& output) const
 {
-    // layout: point, temperature, abundances, opacities, emissivities, line emissivities
+    // layout: point, temperature, abundances, emissivities, line emissivities
     vector<double> record;
     record.reserve(_recordSize);
     record.insert(record.end(), std::begin(point), std::end(point));
     record.push_back(output.temp);
     record.insert(record.end(), std::begin(output.abunv), std::end(output.abunv));
-    record.insert(record.end(), std::begin(output.opacv), std::end(output.opacv));
     record.insert(record.end(), std::begin(output.emisv), std::end(output.emisv));
     record.insert(record.end(), std::begin(output.linev), std::end(output.linev));
     return record;
@@ -456,7 +459,6 @@ void CloudyWrapper::accumulate(Cloudy::Output& output, const double* record, dou
     const double* value = record + numDimsFor(_config);
     output.temp += weight * *value++;
     for (double& v : output.abunv) v += weight * *value++;
-    for (double& v : output.opacv) v += weight * *value++;
     for (double& v : output.emisv) v += weight * *value++;
     for (double& v : output.linev) v += weight * *value++;
 }
@@ -481,7 +483,7 @@ string CloudyWrapper::description() const
 {
     std::ostringstream out;
     out << "# Configuration of this SKIRT Cloudy lookup table; do not edit\n";
-    out << "version " << segmentVersion << "\n";
+    out << versionLine(segmentVersion);
     out << "weights " << toExactString(hdenWeight) << " " << toExactString(metalWeight) << " "
         << toExactString(radWeight) << "\n";
     out << "ions " << _config.numIons << "\n";
@@ -509,7 +511,14 @@ void CloudyWrapper::load()
         return;  // start with an empty table
     }
 
-    if (readTextFile(descriptionPath) != description())
+    // refuse a table written in another format version with a specific message, because it cannot be converted
+    string contents = readTextFile(descriptionPath);
+    string version = versionLine(segmentVersion);
+    if (contents.compare(contents.find('\n') + 1, version.size(), version) != 0)
+        throw FATALERROR("CloudyWrapper: the lookup table in " + _tablePath
+                         + " was written in another format version (this version of SKIRT requires version "
+                         + std::to_string(segmentVersion) + "); specify another table directory");
+    if (contents != description())
         throw FATALERROR("CloudyWrapper: the lookup table in " + _tablePath
                          + " was built with a different configuration; specify another table directory");
 
@@ -569,7 +578,10 @@ void CloudyWrapper::mapSegment(string path)
     uint64_t header[numHeaderValues];
     std::memcpy(header, bytes + segmentMagic.size(), sizeof(header));
     uint64_t count = header[1];
-    if (header[0] != segmentVersion || header[2] != static_cast<uint64_t>(numDimsFor(_config))
+    if (header[0] != segmentVersion)
+        throw FATALERROR("CloudyWrapper: " + path + " was written in format version " + std::to_string(header[0])
+                         + " instead of " + std::to_string(segmentVersion));
+    if (header[2] != static_cast<uint64_t>(numDimsFor(_config))
         || header[3] != static_cast<uint64_t>(_config.numIons)
         || header[4] != static_cast<uint64_t>(_config.wav.numBins)
         || header[5] != static_cast<uint64_t>(_config.numLines))

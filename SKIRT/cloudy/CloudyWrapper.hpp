@@ -46,9 +46,8 @@ class NNIndex;
       inverse-distance weighted average of these runs;
     - otherwise, invokes Cloudy, stores the result, and returns it.
 
-    To make results reusable for slightly different densities, the table stores abundances and
-    opacities per unit hydrogen density, and continuum and line emissivities per unit hydrogen
-    density squared. These quantities are rescaled with the density of the query. This
+    To make results reusable for slightly different densities, the table stores abundances per
+    unit hydrogen density, and continuum and line emissivities per unit hydrogen density squared. These quantities are rescaled with the density of the query. This
     approximation holds only for small differences in density, which is guaranteed by the
     distance thresholds.
 
@@ -66,10 +65,12 @@ class NNIndex;
 
     The table is stored in a directory. Next to the nearest-neighbour index, the directory
     contains a text file describing the configuration the table was built with (radiation field
-    grid, wavelength grid, number of ions and lines, distance weights, and the full contents of the
-    Cloudy input template). An existing table is only loaded if this description matches the
-    current configuration exactly; otherwise setup() throws a FatalError, so that results computed
-    for a different configuration are never silently reused. The lookup options (number of
+    grid, wavelength grid, number of ions and lines, distance weights, format version, and the full
+    contents of the Cloudy input template). An existing table is only loaded if this description
+    matches the current configuration exactly; otherwise setup() throws a FatalError, so that
+    results computed for a different configuration are never silently reused. Tables written in
+    another format version are refused with a specific message; in particular, version 2 tables
+    stored Cloudy's opacities and cannot be converted to version 3. The lookup options (number of
     neighbours and distance thresholds) do not affect the stored data and may be changed freely
     between simulations.
 
@@ -94,11 +95,11 @@ class NNIndex;
       is first saved. Each line ends with a newline character. Real numbers are written in
       scientific notation with 17 digits after the decimal point. The lines are, in this order:
       - <tt># Configuration of this SKIRT Cloudy lookup table; do not edit</tt>
-      - <tt>version V</tt>: the format version, currently 2, equal to the version in the segment
+      - <tt>version V</tt>: the format version, currently 3, equal to the version in the segment
         headers;
       - <tt>weights w_n w_Z w_J</tt>: the coordinate weights (see above);
       - <tt>ions I</tt>: the number of ion abundances in a record (495 for XRayCloudyGasMix);
-      - <tt>lines L</tt>: the number of line emissivities in a record;
+      - <tt>lines L</tt>: the number of line emissivities in a record (zero for XRayCloudyGasMix);
       - <tt>minimum-flux F</tt>: the floor for the radiation field, in W/m2/m/sr;
       - <tt>radiation-bins N</tt>, followed by N+1 lines with the bin borders in Ry, in the order
         of the bins (for XRayCloudyGasMix, the radiation field wavelength grid in ascending
@@ -111,10 +112,10 @@ class NNIndex;
       consecutively from zero with six digits; each save adds one segment. A segment consists of
       a 64-byte header followed by its records, without padding:
       - bytes 0-15: the ASCII characters <tt>SKIRTCloudyTable</tt> (no terminating zero);
-      - bytes 16-63: six unsigned 64-bit integers: the format version (2), the number of records
+      - bytes 16-63: six unsigned 64-bit integers: the format version (3), the number of records
         R in this segment, the number of point coordinates D = N+2, the number of ions I, the
         number of wavelengths W, and the number of lines L;
-      - from byte 64: R records of S = D + 1 + I + 2W + L 64-bit IEEE doubles each, so that the
+      - from byte 64: R records of S = D + 1 + I + W + L 64-bit IEEE doubles each, so that the
         file size is 64 + 8RS bytes.
     - <tt>index.hnsw</tt>: the nearest-neighbour index in the hnswlib format, labelling each run
       with its position in the sequence of all records over all segments (in segment order),
@@ -134,12 +135,15 @@ class NNIndex;
     - offset D: the gas temperature in K (not scaled with density);
     - offsets D+1 to D+I: the ion abundances divided by \f$n_\mathrm{H}\f$ (dimensionless), indexed
       as \f$Z(Z+1)/2+N-1\f$ for the ion with atomic number Z and N electrons (H+1, H+0, He+2, ...);
-    - offsets D+1+I to D+I+W: the absorption opacities divided by \f$n_\mathrm{H}\f$, in m2, on
-      the wavelengths of table.txt;
-    - offsets D+1+I+W to D+I+2W: the continuum emissivities divided by \f$n_\mathrm{H}^2\f$, in
-      W m3/m (i.e. (W/m3/m) / (1/m3)^2), on the same wavelengths;
-    - offsets D+1+I+2W to S-1: the line emissivities divided by \f$n_\mathrm{H}^2\f$, in W m3, in
-      the order of the lines requested by the template.
+    - offsets D+1+I to D+I+W: the continuum emissivities divided by \f$n_\mathrm{H}^2\f$, in
+      W m3/m (i.e. (W/m3/m) / (1/m3)^2), on the wavelengths of table.txt (for XRayCloudyGasMix,
+      the "Total" column of Cloudy's diffuse continuum, i.e. continuum plus binned lines);
+    - offsets D+1+I+W to S-1: the line emissivities divided by \f$n_\mathrm{H}^2\f$, in W m3, in
+      the order of the lines requested by the template (none for XRayCloudyGasMix).
+
+    Format version 2 had, in addition, the absorption opacities divided by \f$n_\mathrm{H}\f$
+    (W values, in m2) between the ion abundances and the continuum emissivities, so that
+    S = D + 1 + I + 2W + L.
 
     The absolute quantities of a stored run are recovered by multiplying with
     \f$n_\mathrm{H} = 10^{x_0/w_n}\f$ (or its square), where \f$x_0\f$ is the record value at

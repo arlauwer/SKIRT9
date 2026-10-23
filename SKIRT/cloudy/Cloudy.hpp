@@ -52,8 +52,7 @@ public:
     {
         double temp{0.};  // K
         Array abunv;      // 1/m3, one value per ion
-        Array opacv;      // 1/m, ascending wavelength
-        Array emisv;      // W/m3/m, ascending wavelength
+        Array emisv;      // W/m3/m, ascending wavelength, continuum plus binned lines
         Array linev;      // W/m3, one value per line
 
         /** Resizes all arrays according to the specified configuration and sets all values to
@@ -84,13 +83,13 @@ private:
     void readOutput(Output& output) const;
     void readTemp(Output& output) const;
     void readAbun(Output& output) const;
-    void readOpac(Output& output) const;
     void readEmis(Output& output) const;
     void readLines(Output& output) const;
 
     /** Reads one column of a per-wavelength Cloudy file into \em target, reversing the row order
-        (Cloudy writes descending wavelength, SKIRT wants ascending). */
-    void readSpectrum(const string& fileName, size_t col, Array& target) const;
+        (Cloudy writes descending wavelength, SKIRT wants ascending). Throws a FatalError if the
+        header line of the file differs from \em header. */
+    void readSpectrum(const string& fileName, const string& header, size_t col, Array& target) const;
 
     string localPath(const string& fileName) const;
 

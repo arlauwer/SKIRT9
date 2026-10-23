@@ -10,6 +10,7 @@
 #include "DisjointWavelengthGrid.hpp"
 #include "ElectronScatteringHelper.hpp"
 #include "EmittingGasMix.hpp"
+#include "IonicCrossSections.hpp"
 #include "ItemInfo.hpp"
 #include "MaterialMix.hpp"
 #include "PhotonPacket.hpp"
@@ -17,11 +18,71 @@
 ////////////////////////////////////////////////////////////////////
 
 /** The XRayCloudyGasMix class describes the material properties of a partially ionized gas whose
-    temperature, ionization state, absorption opacity, continuum emissivity and line emissivities
-    are calculated self-consistently by the external photoionization code Cloudy. Each time the
-    medium state is updated, a one-zone Cloudy model is evaluated for every spatial cell, given the
-    hydrogen density and metallicity of the cell and the radiation field in the cell as calculated
-    by SKIRT. Electrons scatter photons through (optionally polarized) Compton scattering.
+    temperature, ionization state and continuum emissivity are calculated self-consistently by the
+    external photoionization code Cloudy, and whose X-ray opacity is calculated by SKIRT from the
+    ion densities. Each time the medium state is updated, a one-zone Cloudy model is evaluated for
+    every spatial cell, given the hydrogen density and metallicity of the cell and the radiation
+    field in the cell as calculated by SKIRT.
+
+    <b>What comes from Cloudy</b>
+
+    Cloudy delivers, for each cell, the gas temperature, the densities of the 495 ions of the
+    elements H to Zn (atomic numbers 1 to 30), and the continuum emissivity. The emissivity is the
+    "Total" column of Cloudy's <tt>save diffuse continuum</tt> command, i.e. the diffuse continuum
+    plus the emission lines binned onto Cloudy's energy grid. It includes the recombination lines,
+    but not the inner-shell (fluorescence) lines, which SKIRT adds itself (see below). There is no
+    separate line emission: hasLineEmission() returns false.
+
+    <b>What SKIRT computes</b>
+
+    All optical properties are calculated from the ion densities, as in the XRayIonicGasMix class,
+    on the wavelength grid used by Cloudy:
+
+    - Photo-absorption: \f$\kappa^\mathrm{ph}(\lambda) = \sum_i n_i \sigma_i(\lambda)\f$, summed
+      over all ions \f$i\f$, with the cross sections \f$\sigma_i\f$ summed over all subshells
+      according to the fits of Verner & Yakovlev 1995 (resource <tt>Ionic_PA.txt</tt>, see the
+      IonicCrossSections namespace). The cross sections are evaluated at the characteristic
+      wavelength of each bin, without thermal smoothing because the bins are much wider than the
+      thermal width of the absorption edges.
+
+    - Fluorescence: a vacancy in a given subshell leads to the emission of fluorescence lines with
+      the yields listed in the resource <tt>Ionic_FL.txt</tt>. The fluorescence part of the
+      photo-absorption, \f$\kappa^\mathrm{fl}(\lambda) = \sum_i n_i \sum_s \sigma_{i,s}(\lambda)\,
+      \omega_{i,s}\f$, where \f$\omega_{i,s}\f$ is the total yield of subshell \f$s\f$, is treated
+      as scattering, and the remainder \f$\kappa^\mathrm{abs} = \kappa^\mathrm{ph} -
+      \kappa^\mathrm{fl}\f$ as absorption. Because the yields include the photons emitted during
+      the cascade that follows the vacancy, the total yield of a subshell may exceed unity, so that
+      \f$\kappa^\mathrm{abs}\f$ may be negative and the albedo may exceed unity, as in the
+      XRayIonicGasMix class. At a fluorescence event, the ion is chosen with weights \f$n_i
+      \sum_s \sigma_{i,s}\omega_{i,s}\f$, the subshell with weights
+      \f$\sigma_{i,s}\omega_{i,s}\f$, and the line according to its share of the yield of the
+      subshell. The photon packet is emitted isotropically and unpolarized at the line energy,
+      sampled from a Lorentz profile for the lines that list a width, and Doppler shifted by the
+      thermal velocity of the emitting atom. The recombination channels offered by the
+      XRayIonicGasMix class are not included, because the emissivity calculated by Cloudy already
+      contains the recombination lines.
+
+    - Electron scattering: Compton scattering by all electrons, bound or free, treated as free
+      electrons (optionally with support for polarization), with \f$\kappa^\mathrm{es}(\lambda) =
+      \sigma_\mathrm{KN}(\lambda) \sum_Z Z n_Z\f$, where \f$n_Z\f$ is the total density of the
+      element with atomic number \f$Z\f$. The element whose electrons scatter is chosen with
+      weights \f$Z n_Z\f$, independent of wavelength; its thermal velocity determines the Doppler
+      shift. At a scattering event, electron scattering and fluorescence are chosen in proportion
+      to \f$\kappa^\mathrm{es}\f$ and \f$\kappa^\mathrm{fl}\f$.
+
+    The cross sections of all ions on the Cloudy grid are calculated once during setup and shared
+    by all cells (about 37 MB each for absorption and fluorescence). Each cell stores the ion
+    densities, the absorption and fluorescence opacities and the emissivity on the Cloudy grid,
+    i.e. about 0.2 MB per cell.
+
+    <b>Limitations</b>
+
+    Only photo-ionization from the ground state of each ion is included. Free-free absorption,
+    H<sup>-</sup> absorption, photo-ionization from excited states, line absorption (resonant
+    scattering) and dust are not included. This matters only below 13.6 eV; above 13.6 eV the
+    photo-absorption agrees with Cloudy's own opacity to within a few per cent, except for He I
+    at 0.1-1 keV, where Cloudy's cross section is 20-30 % below the Verner fit used here. The
+    cross sections vanish outside 4.3 eV - 500 keV, except for electron scattering.
 
     <b>Cloudy runs and the lookup table</b>
 
@@ -38,18 +99,21 @@
     nearest to the cell's input parameters are located. If the nearest run lies within
     \em matchDistance, it is reused as is; otherwise, if all of these runs lie within
     \em interpolationDistance, their results are interpolated; otherwise, Cloudy is invoked and
-    the result is added to the table. Refer to the CloudyWrapper class for the definition of the
-    distance, the format of the table, and other details. In Record and Lookup mode, the table is
-    saved after each medium state update.
+    the result is added to the table. Because the opacities are linear in the ion densities,
+    interpolating the ion densities is equivalent to interpolating the opacities. Refer to the
+    CloudyWrapper class for the definition of the distance, the format of the table, and other
+    details. In Record and Lookup mode, the table is saved after each medium state update.
 
     After each medium state update, the log reports how the cells were handled, in the format
     <tt>Cloudy runs: N</tt> (Direct and Record mode) or <tt>Cloudy runs: N, reused: M,
     interpolated: K</tt> (Lookup mode). Cells with zero density are not counted.
 
     A table directory can only be reused by simulations with the same radiation field wavelength
-    grid, minimum radiation field, Cloudy input template, and Cloudy wavelength and line lists.
-    For an incompatible configuration, the simulation stops with an error. A table directory
-    should not be shared by multiple medium components or simultaneously running simulations.
+    grid, minimum radiation field, Cloudy input template, and Cloudy wavelength grid, and with the
+    same table format version; tables written by earlier versions of this class (which stored
+    Cloudy's opacities) are refused. For an incompatible configuration, the simulation stops with
+    an error. A table directory should not be shared by multiple medium components or
+    simultaneously running simulations.
 
     Previously saved runs are memory-mapped rather than read into memory, so that large tables
     can be used; runs added during the current simulation are held in memory. When running with
@@ -60,9 +124,10 @@
 
     <b>Resources</b>
 
-    The Cloudy input template, the Cloudy wavelength grid, and the list of emission lines are
-    loaded from the resource files <tt>XRayCloudyGasMix_template.in</tt>,
-    <tt>XRayCloudyGasMix_wav.dat</tt>, and <tt>XRayCloudyGasMix_lines.dat</tt>. */
+    The Cloudy input template and the Cloudy wavelength grid are loaded from the resource files
+    <tt>XRayCloudyGasMix_template.in</tt> and <tt>XRayCloudyGasMix_wav.dat</tt>, and the atomic data
+    from the resource files <tt>Ionic_PA.txt</tt> and <tt>Ionic_FL.txt</tt> shared with the
+    XRayIonicGasMix class. */
 class XRayCloudyGasMix : public EmittingGasMix
 {
     ENUM_DEF(ElectronScattering, None, Free, FreeWithPolarization)
@@ -142,21 +207,22 @@ private:
         wavelength, or -1 if the wavelength lies outside of the Cloudy wavelength grid. */
     int indexForLambda(double lambda) const;
 
-    /** This function returns the cumulative scattering probabilities over the atoms for the
-        specified wavelength bin, retrieved from the specified material state. */
-    Array getKappaScaCum(const MaterialState* state, int ell) const;
+    /** This function calculates the photo-absorption and fluorescence cross sections of all ions
+        on the Cloudy wavelength grid, the fluorescence line distributions, and the Compton cross
+        section per electron. */
+    void setupCrossSections();
 
-    /** This function stores the cumulative scattering probabilities over the atoms for the
-        specified wavelength bin in the specified material state. */
-    void setKappaScaCum(MaterialState* state, int ell, const Array& kappaScaCum) const;
-
-    /** This function returns the absorption opacity for the specified wavelength bin, or zero if
-        the index is out of range. */
+    /** This function returns the absorption opacity (excluding fluorescence) for the specified
+        wavelength bin, or zero if the index is out of range. */
     double kappaAbs(const MaterialState* state, int ell) const;
 
-    /** This function returns the scattering opacity for the specified wavelength bin, or zero if
-        the index is out of range or electron scattering is disabled. */
-    double kappaSca(const MaterialState* state, int ell) const;
+    /** This function returns the electron scattering opacity for the specified wavelength bin, or
+        zero if the index is out of range or electron scattering is disabled. */
+    double kappaElec(const MaterialState* state, int ell) const;
+
+    /** This function returns the fluorescence opacity for the specified wavelength bin, or zero if
+        the index is out of range. */
+    double kappaFlu(const MaterialState* state, int ell) const;
 
     //============= Capabilities =============
 
@@ -171,9 +237,10 @@ public:
 
     bool hasScatteringDispersion() const override;
 
-    bool hasContinuumEmission() const override;
+    /** This function returns true, because fluorescence is implemented as scattering. */
+    bool scatteringEmulatesSecondaryEmission() const override;
 
-    bool hasLineEmission() const override;
+    bool hasContinuumEmission() const override;
 
     //======== Medium state setup =======
 
@@ -235,14 +302,6 @@ public:
         the extended Cloudy wavelength grid, i.e. with an extra zero value on either side. */
     Array emissionSpectrum(const MaterialState* state, const Array& Jv) const override;
 
-    //======== Secondary line emission =======
-
-    Array lineEmissionCenters() const override;
-
-    Array lineEmissionMasses() const override;
-
-    Array lineEmissionSpectrum(const MaterialState* state, const Array& Jv) const override;
-
     //======== Temperature =======
 
     /** This function returns the temperature of the specified cell as calculated by Cloudy. */
@@ -257,7 +316,26 @@ private:
         int N;  // number of electrons
     };
 
-    /** This function stores the specified Cloudy results in the specified material state. */
+    // a subshell with at least one fluorescence line
+    struct Subshell
+    {
+        IonicCrossSections::PhotoAbsorbResource pa;  // the photo-absorption parameters of the subshell
+        double yield;                                // the total fluorescence yield of the subshell
+        int firstLine;                               // the index of the first line in _fluoLinev
+        Array cumLinev;                              // the normalized cumulative yield over the lines
+    };
+
+    // a fluorescence line
+    struct FluoLine
+    {
+        int Z;          // the atomic number of the emitting atom
+        double lambda;  // the central wavelength (m)
+        double energy;  // the central energy (eV)
+        double width;   // the HWHM of the Lorentz profile (eV), or zero
+    };
+
+    /** This function stores the specified Cloudy results in the specified material state, and
+        calculates the opacities from the ion densities. */
     void storeOutput(MaterialState* state, const Cloudy::Output& output) const;
 
     //======================== Data Members ========================
@@ -266,17 +344,23 @@ private:
     int _numElec{0};  // number of species for electron scattering (one per atom, or none)
 
     vector<IonParam> _ionParamv;
-    Array _lineMassv;
-    Array _lineCenterv;
+
+    // cross sections on the Cloudy wavelength grid, shared by all cells
+    Array _energyv;               // photon energy (eV) at the characteristic wavelength of each bin
+    vector<Array> _sigmaAbsvv;    // [ion][ell] photo-absorption cross section (m2), empty for an ion without data
+    vector<Array> _sigmaFluvv;    // [ion][ell] fluorescence part of the above (m2), empty for an ion without lines
+    Array _sigmaElecv;            // [ell] Compton cross section per electron (m2), empty without electron scattering
+    vector<vector<Subshell>> _subshellvv;  // [ion][s] subshells with fluorescence lines
+    vector<FluoLine> _fluoLinev;           // [f] all fluorescence lines
 
     // MediumState data
     int _indexAbundances{0};       // numIons
     int _indexThermalVelocity{0};  // numAtoms
     int _indexKappaAbs{0};         // numLambda
-    int _indexKappaSca{0};         // numLambda (only if _numElec > 0)
-    int _indexKappaScaCum{0};      // numLambda x (_numElec-1) (only if _numElec > 0)
+    int _indexKappaFlu{0};         // numLambda
+    int _indexElectronDensity{0};  // 1 (only if _numElec > 0)
+    int _indexElementCum{0};       // _numElec-1 (only if _numElec > 0)
     int _indexEmissivity{0};       // numLambda
-    int _indexLineEmissivity{0};   // numLines
 
     string _tablePath;  // the table directory, resolved relative to the output directory
     CloudyConfig _cloudyConfig;

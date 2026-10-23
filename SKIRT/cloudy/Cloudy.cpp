@@ -16,7 +16,13 @@ namespace
     // the files that a run writes in its directory: the input files, Cloudy's standard output, and the save files
     // requested by the input template
     const char* const runFileNames[] = {"sim.in",      "sed.in",   "sim.out",  "sim.ovr",
-                                        "sim.species", "sim.opac", "sim.emis", "sim.lines"};
+                                        "sim.species", "sim.emis", "sim.lines"};
+
+    // the header line of the file written by "save diffuse continuum"; the columns are the photon energy in Ry and
+    // the local continuum emission, the line emission binned onto the energy grid, and their sum, all as nu j_nu in
+    // erg/s/cm3
+    const char* const emisHeader = "#energy/Ryd\tConEmitLocal\tDiffuseLineEmission\tTotal";
+    constexpr size_t emisTotalColumn = 3;
 
     // returns the tab separated fields of the given line, or throws if there are too few.
     vector<string> splitRow(const string& line, size_t minCols, const string& what)
@@ -58,7 +64,6 @@ void Cloudy::Output::resize(const CloudyConfig& config)
 {
     temp = 0.;
     abunv.resize(config.numIons, 0.);
-    opacv.resize(config.wav.numBins, 0.);
     emisv.resize(config.wav.numBins, 0.);
     linev.resize(config.numLines, 0.);
 }
@@ -183,7 +188,6 @@ void Cloudy::readOutput(Output& output) const
 {
     readTemp(output);
     readAbun(output);
-    readOpac(output);
     readEmis(output);
     readLines(output);
 }
@@ -227,7 +231,7 @@ void Cloudy::readAbun(Output& output) const
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::readSpectrum(const string& fileName, size_t col, Array& target) const
+void Cloudy::readSpectrum(const string& fileName, const string& header, size_t col, Array& target) const
 {
     string path = localPath(fileName);
     std::ifstream file = openInput(path);
@@ -235,7 +239,9 @@ void Cloudy::readSpectrum(const string& fileName, size_t col, Array& target) con
     size_t numBins = _config.wav.numBins;
     size_t numRows = 0;
     string line;
-    getline(file, line);  // header
+    getline(file, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line != header) throw FATALERROR("Cloudy: unexpected header in " + path + ": " + line);
 
     while (getline(file, line))
     {
@@ -252,17 +258,10 @@ void Cloudy::readSpectrum(const string& fileName, size_t col, Array& target) con
 
 ////////////////////////////////////////////////////////////////////
 
-void Cloudy::readOpac(Output& output) const
-{
-    readSpectrum("sim.opac", 2, output.opacv);
-    output.opacv *= 1e2;  // 1/cm -> 1/m
-}
-
-////////////////////////////////////////////////////////////////////
-
 void Cloudy::readEmis(Output& output) const
 {
-    readSpectrum("sim.emis", 1, output.emisv);
+    // the total column holds the continuum plus the binned lines (but no inner-shell lines)
+    readSpectrum("sim.emis", emisHeader, emisTotalColumn, output.emisv);
     output.emisv *= 1e-1;                 // erg/s/cm3 -> W/m3
     output.emisv /= _config.wav.lambdav;  // W/m3 -> W/m3/m
 }
@@ -271,6 +270,9 @@ void Cloudy::readEmis(Output& output) const
 
 void Cloudy::readLines(Output& output) const
 {
+    // without requested lines, the template has no "save lines emissivity" command
+    if (_config.numLines == 0) return;
+
     string path = localPath("sim.lines");
     std::ifstream file = openInput(path);
 
