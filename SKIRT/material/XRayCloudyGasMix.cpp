@@ -506,7 +506,9 @@ void XRayCloudyGasMix::setScatteringInfoIfNeeded(PhotonPacket::ScatteringInfo* s
         // choose between electron scattering and fluorescence in proportion to their opacities
         double kappaElecValue = kappaElec(state, ell);
         double kappaFluValue = kappaFlu(state, ell);
-        if (kappaFluValue <= 0. || random()->uniform() * (kappaElecValue + kappaFluValue) < kappaElecValue)
+        if (!(kappaElecValue > 0.) && !(kappaFluValue > 0.))
+            throw FATALERROR("Scattering event in a cell without scattering opacity");
+        if (!(kappaFluValue > 0.) || random()->uniform() * (kappaElecValue + kappaFluValue) < kappaElecValue)
         {
             // electron scattering: choose the atom whose electrons scatter, which determines the thermal velocity
             Array elementCum(_numElec + 1);
@@ -678,7 +680,7 @@ void XRayCloudyGasMix::storeOutput(MaterialState* state, const Cloudy::Output& o
     for (int i = 0; i < numIons; i++)
     {
         double n = output.abunv[i];
-        if (n <= 0.) continue;
+        if (!(n > 0.)) continue;  // also skips NaN
         const Array& sigmaAbsv = _sigmaAbsvv[i];
         if (sigmaAbsv.size() != 0)
             for (int ell = 0; ell < numBins; ell++) kappaPhotov[ell] += n * sigmaAbsv[ell];
