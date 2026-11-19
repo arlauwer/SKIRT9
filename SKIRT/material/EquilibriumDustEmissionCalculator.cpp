@@ -49,6 +49,10 @@ void EquilibriumDustEmissionCalculator::precalculate(SimulationItem* item, const
             auto dustEmissionWLG = config->dustEmissionWLG();
             dustEmissionWLG->setup();
             _emlambdav = dustEmissionWLG->extlambdav();
+
+            // precalculate the wavelength-dependent factor in the exponent of the Planck function
+            constexpr double hck = Constants::h() * Constants::c() / Constants::k();
+            _emhckv = hck / _emlambdav;
         }
 
         // build the temperature grid on which we store the Planck-integrated absorption cross sections
@@ -62,6 +66,19 @@ void EquilibriumDustEmissionCalculator::precalculate(SimulationItem* item, const
     if (_emlambdav.size())
     {
         _emsigmaabsvv.emplace_back(NR::resample<NR::interpolateLogLog>(_emlambdav, lambdav, sigmaabsv));
+
+        // precalculate the cross sections multiplied by the temperature-independent front factor of the Planck
+        // function, so that the emissivity calculation needs a single exponential per wavelength
+        constexpr double front = 2. * Constants::h() * Constants::c() * Constants::c();
+        int numWavelengths = _emlambdav.size();
+        Array frontv(numWavelengths);
+        for (int ell = 0; ell != numWavelengths; ++ell)
+        {
+            double lambda = _emlambdav[ell];
+            double lambda2 = lambda * lambda;
+            frontv[ell] = _emsigmaabsvv.back()[ell] * front / (lambda2 * lambda2 * lambda);
+        }
+        _emfrontvv.emplace_back(std::move(frontv));
     }
 
     // calculate the Planck-integrated absorption cross sections on the temperature grid
@@ -104,6 +121,8 @@ size_t EquilibriumDustEmissionCalculator::allocatedBytes() const
     allocatedSize += _Tv.size();
     if (!_rfsigmaabsvv.empty()) allocatedSize += _rfsigmaabsvv.size() * _rfsigmaabsvv[0].size();
     if (!_emsigmaabsvv.empty()) allocatedSize += _emsigmaabsvv.size() * _emsigmaabsvv[0].size();
+    if (!_emfrontvv.empty()) allocatedSize += _emfrontvv.size() * _emfrontvv[0].size();
+    allocatedSize += _emhckv.size();
     if (!_planckabsvv.empty()) allocatedSize += _planckabsvv.size() * _planckabsvv[0].size();
     return allocatedSize * sizeof(double);
 }
@@ -133,17 +152,30 @@ double EquilibriumDustEmissionCalculator::equilibriumTemperature(int b, const Ar
 
 Array EquilibriumDustEmissionCalculator::emissivity(const Array& Jv) const
 {
+    // the largest argument for which the exponential function does not overflow; for larger arguments,
+    // the Planck function and thus the contribution to the emissivity is exactly zero
+    const double maxExponent = std::log(std::numeric_limits<double>::max());
+
     int numWavelengths = _emlambdav.size();
     int numBins = _rfsigmaabsvv.size();
 
     Array ev(numWavelengths);
     for (int b = 0; b != numBins; ++b)
     {
+        // a zero temperature leads to a zero Planck function at all wavelengths
         double T = equilibriumTemperature(b, Jv);
-        PlanckFunction B(T);
-        for (int ell = 0; ell < numWavelengths; ell++)
+        if (T > 0.)
         {
-            ev[ell] += _emsigmaabsvv[b][ell] * B(_emlambdav[ell]);
+            // add the cross section times the Planck function 2hc^2/lambda^5 / (exp(hc/(k lambda T)) - 1)
+            double invT = 1. / T;
+            const double* frontv = std::begin(_emfrontvv[b]);
+            const double* hckv = std::begin(_emhckv);
+            double* evp = std::begin(ev);
+            for (int ell = 0; ell != numWavelengths; ++ell)
+            {
+                double x = hckv[ell] * invT;
+                if (x < maxExponent) evp[ell] += frontv[ell] / (std::exp(x) - 1.);
+            }
         }
     }
     return ev;

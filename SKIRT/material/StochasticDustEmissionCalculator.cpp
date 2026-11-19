@@ -104,6 +104,8 @@ private:
     const SDE_TemperatureGrid* _grid;  // temperature grid with corresponding black body discretization
     Triangle<double> _HRm;             // heating rates (indexed on f,i)
     Triangle<short> _Km;               // radiation field wavelength index k (indexed on f,i), short to save memory
+    vector<int> _firstKv;              // first column i with a radiation field wavelength index in row f, or -1
+    vector<int> _lastKv;               // last column i with a radiation field wavelength index in row f, or -1
     Array _CRv;                        // cooling rates (indexed on p)
     Array _planckabsv;                 // Planck-integrated absorption cross sections (indexed on p)
 
@@ -152,6 +154,22 @@ public:
                 {
                     double sigmaabs = NR::value<NR::interpolateLogLog>(lambda, lambdav, sigmaabsv);
                     _HRm(f, i) = hc * sigmaabs * dHv[f] / (Hdiff * Hdiff * Hdiff);
+                }
+            }
+        }
+
+        // determine for each row of the heating rate matrix the first and last column with a radiation field
+        // wavelength index, i.e. the range of columns that may hold a nonzero heating rate (-1 if there are none)
+        _firstKv.assign(NT, -1);
+        _lastKv.assign(NT, -1);
+        for (int f = 1; f < NT; f++)
+        {
+            for (int i = 0; i < f; i++)
+            {
+                if (_Km(f, i) >= 0)
+                {
+                    if (_firstKv[f] < 0) _firstKv[f] = i;
+                    _lastKv[f] = i;
                 }
             }
         }
@@ -240,39 +258,73 @@ public:
         ioff = NR::locateClip(_grid->_Tv, Tmin);
         int NT = NR::locateClip(_grid->_Tv, Tmax) - ioff + 2;
 
-        // copy/calculate the transition matrix coefficients
+        // calculate the transition matrix coefficients: the cooling rates on the superdiagonal, and the cumulative
+        // heating rates below the diagonal, i.e. the sum of the heating rates in the same column over the row itself
+        // and all rows below it; many heating rates are zero because the corresponding transition wavelength lies
+        // outside of the radiation field wavelength grid, so for each row we determine the range of columns that
+        // may hold a nonzero cumulative heating rate, and we calculate and use only the matrix elements in that range;
+        // the omitted elements are exactly zero, so this does not change the result in any way
         Am.resize(NT);
-        for (int f = 1; f < NT; f++)
-        {
-            const short* Kv = &_Km(f + ioff, ioff);
-            const double* HRv = &_HRm(f + ioff, ioff);
-            for (int i = 0; i < f; i++)
-            {
-                int k = Kv[i];
-                Am(f, i) = k >= 0 ? HRv[i] * Jv[k] : 0.;
-            }
-        }
         for (int i = 1; i < NT; i++)
         {
             Am(i - 1, i) = _CRv[i + ioff];
         }
 
-        // calculate the cumulative matrix coefficients, in place
-        for (int f = NT - 2; f > 0; f--)
+        // the cumulative heating rates are calculated in a single pass from the last row upwards, so that each row is
+        // accumulated while the row below it is still in the cache (memory bandwidth is the bottleneck when many
+        // threads perform this calculation at the same time); the column range of a row is the union of the range of
+        // nonzero heating rates in the row itself and the column range of the row below it
+        thread_local vector<int> firstv, lastv;  // column range for each row (empty if first > last)
+        firstv.resize(NT);
+        lastv.resize(NT);
+        int first = NT;  // column range of the row below the current row (initially empty)
+        int last = -1;
+        for (int f = NT - 1; f > 0; f--)
         {
-            for (int i = 0; i < f; i++)
+            // column range of the row below, limited to the columns of the current row
+            int nextFirst = first;
+            int nextLast = min(last, f - 1);
+
+            // column range of the nonzero heating rates in the current row
+            int rowFirst = NT;
+            int rowLast = -1;
+            if (_firstKv[f + ioff] >= 0)
             {
-                Am(f, i) += Am(f + 1, i);
+                rowFirst = max(_firstKv[f + ioff] - ioff, 0);
+                rowLast = min(_lastKv[f + ioff] - ioff, f - 1);
+            }
+
+            // column range of the current row
+            first = min(nextFirst, rowFirst);
+            last = max(nextLast, rowLast);
+            firstv[f] = first;
+            lastv[f] = last;
+
+            // calculate the cumulative heating rates in this range
+            const short* Kv = &_Km(f + ioff, ioff);
+            const double* HRv = &_HRm(f + ioff, ioff);
+            double* Av = &Am(f, 0);
+            const double* Anextv = f < NT - 1 ? &Am(f + 1, 0) : nullptr;
+            for (int i = first; i <= last; i++)
+            {
+                double rate = 0.;
+                if (i >= rowFirst && i <= rowLast)
+                {
+                    int k = Kv[i];
+                    if (k >= 0) rate = HRv[i] * Jv[k];
+                }
+                Av[i] = rate + (i >= nextFirst && i <= nextLast ? Anextv[i] : 0.);
             }
         }
 
-        // calculate the probabilities
+        // calculate the probabilities, using only the columns that may hold a nonzero cumulative heating rate
         Pv.resize(NT);
         Pv[0] = 1.;
         for (int i = 1; i < NT; i++)
         {
             double sum = 0.;
-            for (int j = 0; j < i; j++) sum += Am(i, j) * Pv[j];
+            const double* Av = &Am(i, 0);
+            for (int j = firstv[i]; j <= lastv[i]; j++) sum += Av[j] * Pv[j];
             Pv[i] = sum / Am(i - 1, i);
 
             // rescale if needed to keep infinities from happening
@@ -456,7 +508,10 @@ Array StochasticDustEmissionCalculator::emissivity(const Array& Jv) const
 
     // provide room for the probabilities calculated over each of the temperature grids
     Array Pv;
-    Square<double> Am(static_cast<size_t>(ceil(Tuppermax)) + 1);
+    // the transition matrix is allocated once for each execution thread and then reused, because allocating and
+    // releasing a matrix of this size for every call causes many page faults; the calculation uses only the part
+    // of the matrix needed for the number of temperature grid points, so most of the memory is never touched
+    thread_local Square<double> Am(static_cast<size_t>(ceil(Tuppermax)) + 1);
 
     // loop over all representative grains (size bins) in the dust mix
     int numBins = _calculatorsA.size();

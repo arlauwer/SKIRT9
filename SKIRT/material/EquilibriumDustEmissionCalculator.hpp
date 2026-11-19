@@ -105,10 +105,12 @@ private:
     Array _rfdlambdav;  // radiation field wavelength grid bin widths -- indexed on k
     Array _Bcmbv;       // cosmic microwave background radiation field, or zeroes -- indexed on k
     Array _emlambdav;   // dust emission wavelength grid (EMWLG) -- indexed on ell
+    Array _emhckv;      // the Planck exponent factor hc/(k lambda) on the EMWLG -- indexed on ell
     Array _Tv;          // temperature grid for the integrated absorption cross sections -- indexed on p
 
     vector<Array> _rfsigmaabsvv;  // absorption cross sections on the RFWLG for each bin -- indexed on b,k
     vector<Array> _emsigmaabsvv;  // absorption cross sections on the EMWLG for each bin -- indexed on b,ell
+    vector<Array> _emfrontvv;     // cross sections times the Planck front factor 2hc^2/lambda^5 -- indexed on b,ell
     vector<Array> _planckabsvv;   // Planck-integrated absorption cross sections for each bin -- indexed on b,p
 };
 
